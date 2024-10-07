@@ -1,54 +1,18 @@
 {
-  "name": "voice-assistant-electron",
+  "name": "voice-assistant",
   "version": "1.0.0",
   "description": "A voice assistant application built with Electron",
   "main": "src/main/main.js",
   "scripts": {
-    "start": "electron-forge start",
-    "package": "electron-forge package",
-    "make": "electron-forge make"
-  },
-  "author": "Your Name",
-  "license": "MIT",
-  "config": {
-    "forge": {
-      "packagerConfig": {},
-      "makers": [
-        {
-          "name": "@electron-forge/maker-squirrel",
-          "config": {
-            "name": "voice_assistant_electron"
-          }
-        },
-        {
-          "name": "@electron-forge/maker-zip",
-          "platforms": [
-            "darwin"
-          ]
-        },
-        {
-          "name": "@electron-forge/maker-deb",
-          "config": {}
-        },
-        {
-          "name": "@electron-forge/maker-rpm",
-          "config": {}
-        }
-      ]
-    }
-  },
-  "devDependencies": {
-    "@electron-forge/cli": "^7.5.0",
-    "@electron-forge/maker-deb": "^7.5.0",
-    "@electron-forge/maker-rpm": "^7.5.0",
-    "@electron-forge/maker-squirrel": "^7.5.0",
-    "@electron-forge/maker-zip": "^7.5.0",
-    "@electron-forge/plugin-auto-unpack-natives": "^7.5.0",
-    "@electron-forge/plugin-fuses": "^7.5.0",
-    "@electron/fuses": "^1.8.0",
-    "electron": "^32.1.2"
+    "start": "electron ."
   },
   "dependencies": {
-    "electron-squirrel-startup": "^1.0.1"
-  }
+    "electron": "^25.0.0"
+  },
+  "devDependencies": {
+    "electron": "^latest_version"
+  },
+  "permissions": [
+    "audio"
+  ]
 }

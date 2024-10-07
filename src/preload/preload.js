@@ -1,10 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-// Expose protected methods that allow the renderer process to use
-// the ipcRenderer without exposing the entire object
-contextBridge.exposeInMainWorld("api", {
+contextBridge.exposeInMainWorld("electronAPI", {
   send: (channel, data) => {
-    // whitelist channels
+    // Whitelist channels
     let validChannels = ["toMain"];
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data);
@@ -16,5 +14,21 @@ contextBridge.exposeInMainWorld("api", {
       // Deliberately strip event as it includes `sender`
       ipcRenderer.on(channel, (event, ...args) => func(...args));
     }
+  },
+});
+
+// Expose a function to request microphone access
+contextBridge.exposeInMainWorld("microphoneAccess", {
+  request: () => {
+    return navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        // Microphone access granted
+        return true;
+      })
+      .catch((err) => {
+        console.error("Error accessing microphone:", err);
+        return false;
+      });
   },
 });

@@ -2,14 +2,15 @@
 <html>
 
 <head>
-    <meta charset="UTF-8">
     <title>Voice Assistant</title>
-    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';" />
 </head>
 
 <body>
-    <h1>Voice Assistant</h1>
-    <p>Welcome to the Voice Assistant application.</p>
+    <select id="microphone-select"></select>
+    <button id="start-button">Start</button>
+    <button id="stop-button">Stop</button>
+    <div id="output"></div>
+
     <script src="../src/renderer/renderer.js"></script>
 </body>
 
