@@ -6,6 +6,7 @@ import json
 import io
 from pydub import AudioSegment
 from pydub.playback import play as pydub_play
+import logging
 
 CHUNK_SIZE = 1024
 url = "https://api.elevenlabs.io/v1/text-to-speech/<voice-id>"
@@ -39,10 +40,18 @@ class Assistant:
         self.elevenlabs_api_key = elevenlabs_api_key
         self.voice_id = voice_id
         self.realtime_mode = realtime_mode
+        self.device_found = False
+
+        # Configure logging
+        logging.basicConfig(level=logging.WARNING)
+        logging.getLogger("speech_recognition").setLevel(logging.ERROR)
 
     def listen(self):
         with sr.Microphone() as source:
-            print("Listening...")
+            if not self.device_found:
+                print("Listening...")
+                self.device_found = True
+                logging.info(f"Connected to microphone: {source.device_index}")
             audio = self.recognizer.listen(source)
 
         try:

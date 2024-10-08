@@ -1,0 +1,8 @@
+pcm.!default {
+    type plug
+    slave.pcm "null"
+}
+
+pcm.null {
+    type null
+}
