@@ -17,13 +17,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("process-speech", speechData),
 });
 
-// Expose a function to request microphone access
 contextBridge.exposeInMainWorld("microphoneAccess", {
   request: () => {
     return navigator.mediaDevices
       .getUserMedia({ audio: true })
       .then((stream) => {
-        // Microphone access granted
         return true;
       })
       .catch((err) => {

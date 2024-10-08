@@ -65,13 +65,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
     recognition.onstart = () => {
       console.log("Speech recognition started");
+      statusDiv.textContent = "Listening...";
     };
 
-    recognition.onresult = (event) => {
+    recognition.onresult = async (event) => {
       const result = event.results[event.results.length - 1];
       const transcript = result[0].transcript;
       console.log("Recognized:", transcript);
       outputDiv.textContent = `Recognized: ${transcript}`;
+
+      if (result.isFinal) {
+        // Process the speech with OpenAI
+        try {
+          statusDiv.textContent = "Processing...";
+          const response = await window.electronAPI.processSpeech(transcript);
+          responseDiv.textContent = `Assistant: ${response}`;
+        } catch (error) {
+          console.error("Error processing speech:", error);
+          responseDiv.textContent = "Error: Unable to process speech.";
+        } finally {
+          statusDiv.textContent = "Listening...";
+        }
+      }
     };
 
     recognition.onerror = (event) => {
@@ -84,6 +99,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     recognition.onend = () => {
       console.log("Speech recognition ended");
+      statusDiv.textContent = "";
     };
 
     try {
@@ -101,13 +117,14 @@ document.addEventListener("DOMContentLoaded", () => {
       recognition = null;
     }
     outputDiv.textContent = "Voice recognition stopped.";
+    statusDiv.textContent = "";
   }
 
   // Event listeners
   startButton.addEventListener("click", startVoiceRecognition);
   stopButton.addEventListener("click", stopVoiceRecognition);
 
-  // Initialize microphone check and speech recognition
+  // Initialize microphone check
   checkMicrophone();
 
   console.log("Renderer process initialization complete");

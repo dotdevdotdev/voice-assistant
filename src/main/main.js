@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const https = require("https");
 const fs = require("fs");
@@ -14,7 +14,7 @@ const configuration = new Configuration({
 const openai = new OpenAIApi(configuration);
 
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
     webPreferences: {
@@ -26,15 +26,39 @@ function createWindow() {
     },
   });
 
-  // Accept self-signed certificate for localhost
-  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-    callback({ requestHeaders: { ...details.requestHeaders } });
-  });
+  // Set up HTTPS server
+  const options = {
+    key: fs.readFileSync(path.join(__dirname, "../../certs/localhost-key.pem")),
+    cert: fs.readFileSync(path.join(__dirname, "../../certs/localhost.pem")),
+  };
 
-  win.loadURL("https://localhost:3000");
+  https
+    .createServer(options, (req, res) => {
+      let filePath = path.join(
+        __dirname,
+        "../../public",
+        req.url === "/" ? "index.html" : req.url
+      );
+      if (req.url === "/renderer.js") {
+        filePath = path.join(__dirname, "../renderer/renderer.js");
+      }
+
+      fs.readFile(filePath, (err, data) => {
+        if (err) {
+          res.writeHead(404);
+          res.end(JSON.stringify(err));
+          return;
+        }
+        res.writeHead(200);
+        res.end(data);
+      });
+    })
+    .listen(3000);
+
+  mainWindow.loadURL("https://localhost:3000");
 
   // Open DevTools (optional)
-  win.webContents.openDevTools();
+  mainWindow.webContents.openDevTools();
 }
 
 app.whenReady().then(() => {
