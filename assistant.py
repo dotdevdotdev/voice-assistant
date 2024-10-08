@@ -22,11 +22,14 @@ class Assistant:
         except sr.RequestError:
             return "Sorry, there was an error with the speech recognition service."
 
-    def process(self, text):
+    def process(self, user_input):
         response = openai.Completion.create(
-            engine="text-davinci-002", prompt=text, max_tokens=150
+            # Replace the deprecated model with a supported one
+            model="gpt-3.5-turbo-instruct",  # or another appropriate model
+            prompt=user_input,
+            # ... other parameters ...
         )
-        return response.choices[0].text.strip()
+        # ... rest of the method ...
 
     def speak(self, text):
         self.engine.say(text)

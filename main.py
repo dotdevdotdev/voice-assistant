@@ -26,7 +26,10 @@ def main():
     app = QApplication(sys.argv)
     window = MainWindow()
 
-    assistant = Assistant("your-openai-api-key")
+    import os
+
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    assistant = Assistant(openai_api_key)
     thread = AssistantThread(assistant)
 
     thread.output.connect(window.update_output)
