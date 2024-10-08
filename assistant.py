@@ -30,12 +30,15 @@ with open("output.mp3", "wb") as f:
 
 
 class Assistant:
-    def __init__(self, openai_api_key, elevenlabs_api_key, voice_id):
+    def __init__(
+        self, openai_api_key, elevenlabs_api_key, voice_id, realtime_mode=False
+    ):
         self.recognizer = sr.Recognizer()
         openai.api_key = openai_api_key
         self.client = OpenAI()
         self.elevenlabs_api_key = elevenlabs_api_key
         self.voice_id = voice_id
+        self.realtime_mode = realtime_mode
 
     def listen(self):
         with sr.Microphone() as source:
@@ -87,3 +90,38 @@ class Assistant:
             print(
                 f"Error: Unable to generate speech. Status code: {response.status_code}"
             )
+
+    def process_message(self, message, realtime_mode=None):
+        # Use the realtime_mode from the request if provided, otherwise use the default
+        use_realtime = (
+            realtime_mode if realtime_mode is not None else self.realtime_mode
+        )
+
+        if use_realtime:
+            return self.process_realtime(message)
+        else:
+            return self.process_normal(message)
+
+    def process_normal(self, message):
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": message},
+            ],
+        )
+        return response.choices[0].message["content"]
+
+    def process_realtime(self, message):
+        response = ""
+        for chunk in openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": message},
+            ],
+            stream=True,
+        ):
+            if chunk.choices[0].delta.get("content"):
+                response += chunk.choices[0].delta.content
+        return response
