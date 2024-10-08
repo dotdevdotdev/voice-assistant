@@ -2,7 +2,6 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
   send: (channel, data) => {
-    // Whitelist channels
     let validChannels = ["toMain"];
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, data);
@@ -11,10 +10,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   receive: (channel, func) => {
     let validChannels = ["fromMain"];
     if (validChannels.includes(channel)) {
-      // Deliberately strip event as it includes `sender`
       ipcRenderer.on(channel, (event, ...args) => func(...args));
     }
   },
+  processSpeech: (speechData) =>
+    ipcRenderer.invoke("process-speech", speechData),
 });
 
 // Expose a function to request microphone access

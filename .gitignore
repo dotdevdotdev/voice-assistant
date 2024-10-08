@@ -84,3 +84,6 @@ yarn-error.log*
 *.pid.lock
 *.log.lock
 *.log.*
+
+# Certificates
+certs/
