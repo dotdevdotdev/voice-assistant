@@ -28,11 +28,21 @@ def main():
     window = MainWindow()
 
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    if not openai_api_key:
-        print("Error: OPENAI_API_KEY environment variable not set")
+    elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+    voice_id = os.getenv(
+        "ELEVENLABS_VOICE_ID", "default"
+    )  # Use a default value if not set
+
+    if not openai_api_key or not elevenlabs_api_key:
+        print(
+            "Error: Missing API keys. Please set OPENAI_API_KEY and ELEVENLABS_API_KEY environment variables."
+        )
         sys.exit(1)
 
-    assistant = Assistant(openai_api_key)
+    if voice_id == "default":
+        print("Warning: ELEVENLABS_VOICE_ID not set. Using default voice.")
+
+    assistant = Assistant(openai_api_key, elevenlabs_api_key, voice_id)
     thread = AssistantThread(assistant)
 
     thread.output.connect(window.update_output)

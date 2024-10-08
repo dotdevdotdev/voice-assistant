@@ -1,15 +1,41 @@
 import speech_recognition as sr
-import pyttsx3
 import openai
-from openai import OpenAI  # Make sure to import OpenAI
+from openai import OpenAI
+import requests
+import json
+import io
+from pydub import AudioSegment
+from pydub.playback import play as pydub_play
+
+CHUNK_SIZE = 1024
+url = "https://api.elevenlabs.io/v1/text-to-speech/<voice-id>"
+
+headers = {
+    "Accept": "audio/mpeg",
+    "Content-Type": "application/json",
+    "xi-api-key": "<xi-api-key>",
+}
+
+data = {
+    "text": "Your text here",
+    "model_id": "eleven_monolingual_v1",
+    "voice_settings": {"stability": 0.5, "similarity_boost": 0.5},
+}
+
+response = requests.post(url, json=data, headers=headers)
+with open("output.mp3", "wb") as f:
+    for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
+        if chunk:
+            f.write(chunk)
 
 
 class Assistant:
-    def __init__(self, api_key):
+    def __init__(self, openai_api_key, elevenlabs_api_key, voice_id):
         self.recognizer = sr.Recognizer()
-        self.engine = pyttsx3.init()
-        openai.api_key = api_key
-        self.client = OpenAI()  # Initialize the OpenAI client
+        openai.api_key = openai_api_key
+        self.client = OpenAI()
+        self.elevenlabs_api_key = elevenlabs_api_key
+        self.voice_id = voice_id
 
     def listen(self):
         with sr.Microphone() as source:
@@ -37,5 +63,27 @@ class Assistant:
         return response.choices[0].message.content
 
     def speak(self, text):
-        self.engine.say(text)
-        self.engine.runAndWait()
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.voice_id}"
+
+        headers = {
+            "Accept": "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": self.elevenlabs_api_key,
+        }
+
+        data = {
+            "text": text,
+            "model_id": "eleven_monolingual_v1",
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.5},
+        }
+
+        response = requests.post(url, json=data, headers=headers)
+
+        if response.status_code == 200:
+            audio = io.BytesIO(response.content)
+            sound = AudioSegment.from_mp3(audio)
+            pydub_play(sound)
+        else:
+            print(
+                f"Error: Unable to generate speech. Status code: {response.status_code}"
+            )
