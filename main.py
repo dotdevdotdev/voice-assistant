@@ -1,4 +1,5 @@
 import sys
+import os
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QThread, pyqtSignal
 from ui import MainWindow
@@ -26,9 +27,11 @@ def main():
     app = QApplication(sys.argv)
     window = MainWindow()
 
-    import os
-
     openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        print("Error: OPENAI_API_KEY environment variable not set")
+        sys.exit(1)
+
     assistant = Assistant(openai_api_key)
     thread = AssistantThread(assistant)
 
