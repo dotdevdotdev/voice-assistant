@@ -12,15 +12,21 @@ class AssistantThread(QThread):
     def __init__(self, assistant):
         super().__init__()
         self.assistant = assistant
+        self.running = True
 
     def run(self):
-        user_input = self.assistant.listen()
-        self.output.emit(f"You said: {user_input}")
+        while self.running:
+            user_input = self.assistant.listen()
+            if user_input and user_input != "Sorry, I couldn't understand that.":
+                self.output.emit(f"You said: {user_input}")
 
-        response = self.assistant.process(user_input)
-        self.output.emit(f"Assistant: {response}")
+                response = self.assistant.process(user_input)
+                self.output.emit(f"Assistant: {response}")
 
-        self.assistant.speak(response)
+                self.assistant.speak(response)
+
+    def stop(self):
+        self.running = False
 
 
 def main():
@@ -29,9 +35,7 @@ def main():
 
     openai_api_key = os.getenv("OPENAI_API_KEY")
     elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
-    voice_id = os.getenv(
-        "ELEVENLABS_VOICE_ID", "default"
-    )  # Use a default value if not set
+    voice_id = os.getenv("ELEVENLABS_VOICE_ID", "default")
 
     if not openai_api_key or not elevenlabs_api_key:
         print(
@@ -47,6 +51,9 @@ def main():
 
     thread.output.connect(window.update_output)
     window.start_listening.connect(thread.start)
+    window.stop_listening.connect(thread.stop)
+
+    thread.start()  # Start the thread immediately
 
     window.show()
     sys.exit(app.exec())
