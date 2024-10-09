@@ -8,26 +8,16 @@ from pydub import AudioSegment
 from pydub.playback import play as pydub_play
 import logging
 
-CHUNK_SIZE = 1024
-url = "https://api.elevenlabs.io/v1/text-to-speech/<voice-id>"
+NORMAL_ASSISTANT_MODEL = "gpt-4o-mini"
+NORMAL_ASSISTANT_SYSTEM_PROMPT = """
+You speak in short sentences. Only enough words to answer the question or convery the information needed. Speak in a very natural way as if you are a human. Ask short questions if needed to get the information you need. Do not use words like 'certainly', or 'definitely'. Use casual short words as much as possible without being too verbose. Speak in a very conversational tone. You should be clever and witty. If there's a pun or a funny way to phrase a response, you should use that one. Deliver it well with good intonation and tone. Use commas and periods as breaks. Do not use emojis or hastags or any other special characters. Begin responses with '...' and then either 'well' or 'hmm' or 'ya know' or 'I mean' or 'supposin' or 'coulda' or 'but' or 'couldn't' or 'hey'
+"""
 
-headers = {
-    "Accept": "audio/mpeg",
-    "Content-Type": "application/json",
-    "xi-api-key": "<xi-api-key>",
-}
+REALTIME_ASSISTANT_SYSTEM_PROMPT = NORMAL_ASSISTANT_SYSTEM_PROMPT
+REALTIME_ASSISTANT_MODEL = NORMAL_ASSISTANT_MODEL
 
-data = {
-    "text": "Your text here",
-    "model_id": "eleven_monolingual_v1",
-    "voice_settings": {"stability": 0.5, "similarity_boost": 0.5},
-}
-
-response = requests.post(url, json=data, headers=headers)
-with open("output.mp3", "wb") as f:
-    for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
-        if chunk:
-            f.write(chunk)
+ELEVENLABS_MODEL_ID = "eleven_turbo_v2_5"
+ELEVENLABS_VOICE_SETTINGS = {"stability": 0.5, "similarity_boost": 0.5}
 
 
 class Assistant:
@@ -66,9 +56,9 @@ class Assistant:
         # This function should return a response, but it might be returning None
         # Let's add a basic implementation
         response = self.client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=REALTIME_ASSISTANT_MODEL,
             messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "system", "content": REALTIME_ASSISTANT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_input},
             ],
         )
@@ -85,8 +75,8 @@ class Assistant:
 
         data = {
             "text": text,
-            "model_id": "eleven_monolingual_v1",
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.5},
+            "model_id": ELEVENLABS_MODEL_ID,
+            "voice_settings": ELEVENLABS_VOICE_SETTINGS,
         }
 
         response = requests.post(url, json=data, headers=headers)
@@ -100,22 +90,20 @@ class Assistant:
                 f"Error: Unable to generate speech. Status code: {response.status_code}"
             )
 
-    def process_message(self, message, realtime_mode=None):
-        # Use the realtime_mode from the request if provided, otherwise use the default
-        use_realtime = (
-            realtime_mode if realtime_mode is not None else self.realtime_mode
-        )
-
-        if use_realtime:
+    def process_message(self, message):
+        if self.realtime_mode:
             return self.process_realtime(message)
         else:
             return self.process_normal(message)
 
     def process_normal(self, message):
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model=NORMAL_ASSISTANT_MODEL,
             messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
+                {
+                    "role": "system",
+                    "content": NORMAL_ASSISTANT_SYSTEM_PROMPT,
+                },
                 {"role": "user", "content": message},
             ],
         )
@@ -124,9 +112,12 @@ class Assistant:
     def process_realtime(self, message):
         response = ""
         for chunk in openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model=REALTIME_ASSISTANT_MODEL,
             messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
+                {
+                    "role": "system",
+                    "content": REALTIME_ASSISTANT_SYSTEM_PROMPT,
+                },
                 {"role": "user", "content": message},
             ],
             stream=True,
