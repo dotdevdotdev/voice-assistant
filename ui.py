@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QHBoxLayout,
     QCheckBox,
+    QComboBox,
 )
 from PyQt6.QtCore import pyqtSignal
 import pyperclip
@@ -32,16 +33,17 @@ class MainWindow(QMainWindow):
         self.output_text.setReadOnly(True)
         layout.addWidget(self.output_text)
 
-        # Add dictation area
         self.dictation_area = QTextEdit()
-        self.dictation_area.setPlaceholderText("Type or dictate here...")
+        self.dictation_area.setPlaceholderText("Transcribed text will appear here...")
         layout.addWidget(self.dictation_area)
 
-        # Add auto-send checkbox
-        self.auto_send_checkbox = QCheckBox("Send to AI automatically")
-        layout.addWidget(self.auto_send_checkbox)
+        # Add output mode selection
+        self.output_mode_combo = QComboBox()
+        self.output_mode_combo.addItems(
+            ["Dictation Area", "Send to AI", "Output to Cursor"]
+        )
+        layout.addWidget(self.output_mode_combo)
 
-        # Add buttons
         button_layout = QHBoxLayout()
 
         self.send_ai_button = QPushButton("Send to AI")
@@ -65,11 +67,20 @@ class MainWindow(QMainWindow):
     def update_output(self, text):
         self.output_text.append(text)
 
+    def update_dictation(self, text):
+        current_mode = self.output_mode_combo.currentText()
+        if current_mode == "Dictation Area":
+            self.dictation_area.setPlainText(text)
+        elif current_mode == "Send to AI":
+            self.send_to_ai.emit(text)
+        elif current_mode == "Output to Cursor":
+            pyautogui.write(text)
+
     def on_send_to_ai(self):
         text = self.dictation_area.toPlainText().strip()
         if text:
             self.send_to_ai.emit(text)
-            self.dictation_area.clear()  # Clear the dictation area after sending
+            self.dictation_area.clear()
 
     def on_output_to_cursor(self):
         text = self.dictation_area.toPlainText().strip()
@@ -84,6 +95,3 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self.stop_listening.emit()
         event.accept()
-
-    def should_auto_send(self):
-        return self.auto_send_checkbox.isChecked()
