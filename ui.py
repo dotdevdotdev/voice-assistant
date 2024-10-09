@@ -20,6 +20,8 @@ class MainWindow(QMainWindow):
     start_listening = pyqtSignal()
     stop_listening = pyqtSignal()
     send_to_ai = pyqtSignal(str)
+    start_clipboard_monitoring = pyqtSignal()
+    stop_clipboard_monitoring = pyqtSignal()
 
     def __init__(self, theme_settings):
         super().__init__()
@@ -68,6 +70,10 @@ class MainWindow(QMainWindow):
         self.output_cursor_toggle = self.create_toggle_button("Output to Cursor")
         self.output_cursor_toggle.clicked.connect(self.on_output_cursor_toggle)
         button_layout.addWidget(self.output_cursor_toggle)
+
+        self.clipboard_monitor_toggle = self.create_toggle_button("Monitor Clipboard")
+        self.clipboard_monitor_toggle.clicked.connect(self.on_clipboard_monitor_toggle)
+        button_layout.addWidget(self.clipboard_monitor_toggle)
 
         layout.addLayout(button_layout)
 
@@ -158,6 +164,13 @@ class MainWindow(QMainWindow):
         if self.output_to_cursor_active:
             self.send_ai_toggle.setChecked(False)
             self.send_to_ai_active = False
+
+    def on_clipboard_monitor_toggle(self):
+        self.clipboard_monitor_active = self.clipboard_monitor_toggle.isChecked()
+        if self.clipboard_monitor_active:
+            self.start_clipboard_monitoring.emit()
+        else:
+            self.stop_clipboard_monitoring.emit()
 
     def on_copy_to_clipboard(self):
         text = self.dictation_area.toPlainText().strip()

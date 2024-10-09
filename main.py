@@ -80,16 +80,40 @@ class AssistantThread(QThread):
         self.assistant = assistant
         self.window = window
         self.running = True
+        self.monitor_clipboard = False
+        self.last_clipboard_content = ""
 
     def run(self):
         while self.running:
-            user_input = self.assistant.listen()
-            if user_input and user_input != "Sorry, I couldn't understand that.":
-                self.output.emit(f"You said: {user_input}")
-                self.update_dictation.emit(user_input)
+            if self.monitor_clipboard:
+                clipboard_content = pyperclip.paste()
+                if clipboard_content != self.last_clipboard_content:
+                    self.last_clipboard_content = clipboard_content
+                    self.update_dictation.emit(clipboard_content)
+                    self.assistant.speak(
+                        clipboard_content
+                    )  # Speak the clipboard content
+                    if self.window.send_to_ai_active:
+                        self.process_and_speak_ai_response(clipboard_content)
+            else:
+                user_input = self.assistant.listen()
+                if user_input and user_input != "Sorry, I couldn't understand that.":
+                    self.output.emit(f"You said: {user_input}")
+                    self.update_dictation.emit(user_input)
 
     def stop(self):
         self.running = False
+
+    def start_clipboard_monitoring(self):
+        self.monitor_clipboard = True
+
+    def stop_clipboard_monitoring(self):
+        self.monitor_clipboard = False
+
+    def process_and_speak_ai_response(self, text):
+        response = self.assistant.process(text)
+        self.output.emit(f"AI: {response}")
+        self.assistant.speak(response)
 
 
 def main():
@@ -123,6 +147,11 @@ def main():
 
     window.send_to_ai.connect(process_and_speak_ai_response)
     window.stop_listening.connect(assistant_thread.stop)
+
+    window.start_clipboard_monitoring.connect(
+        assistant_thread.start_clipboard_monitoring
+    )
+    window.stop_clipboard_monitoring.connect(assistant_thread.stop_clipboard_monitoring)
 
     window.show()
     assistant_thread.start()
