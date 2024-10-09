@@ -4,14 +4,18 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QThread, pyqtSignal
 from ui import MainWindow
 from assistant import Assistant
+import pyperclip
+import pyautogui
 
 
 class AssistantThread(QThread):
     output = pyqtSignal(str)
+    update_dictation = pyqtSignal(str)
 
-    def __init__(self, assistant):
+    def __init__(self, assistant, window):
         super().__init__()
         self.assistant = assistant
+        self.window = window
         self.running = True
 
     def run(self):
@@ -20,10 +24,12 @@ class AssistantThread(QThread):
             if user_input and user_input != "Sorry, I couldn't understand that.":
                 self.output.emit(f"You said: {user_input}")
 
-                response = self.assistant.process(user_input)
-                self.output.emit(f"Assistant: {response}")
-
-                self.assistant.speak(response)
+                if self.window.should_auto_send():
+                    response = self.assistant.process(user_input)
+                    self.output.emit(f"Assistant: {response}")
+                    self.assistant.speak(response)
+                else:
+                    self.update_dictation.emit(user_input)
 
     def stop(self):
         self.running = False
@@ -47,11 +53,17 @@ def main():
         print("Warning: ELEVENLABS_VOICE_ID not set. Using default voice.")
 
     assistant = Assistant(openai_api_key, elevenlabs_api_key, voice_id)
-    thread = AssistantThread(assistant)
+    thread = AssistantThread(assistant, window)
 
     thread.output.connect(window.update_output)
+    thread.update_dictation.connect(
+        lambda text: window.dictation_area.setPlainText(text)
+    )
     window.start_listening.connect(thread.start)
     window.stop_listening.connect(thread.stop)
+    window.send_to_ai.connect(
+        lambda text: thread.output.emit(f"Assistant: {assistant.process(text)}")
+    )
 
     thread.start()  # Start the thread immediately
 
