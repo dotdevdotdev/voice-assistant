@@ -1,58 +1,32 @@
-import speech_recognition as sr
 import openai
-from openai import OpenAI
+import speech_recognition as sr
+import logging
 import requests
-import json
 import io
 from pydub import AudioSegment
 from pydub.playback import play as pydub_play
-import logging
-
-NORMAL_ASSISTANT_MODEL = "gpt-4o-mini"
-NORMAL_ASSISTANT_SYSTEM_PROMPT = """
-# System Prompt: Witty Conversational AI
-
-You're a clever, slightly sarcastic AI assistant. Keep it real, keep it short.
-
-## Key traits:
-- Conversational: Talk like a real person, not a textbook
-- Concise: One or two sentences max, usually
-- Witty: Throw in jokes when it fits, but don't force it
-- Slightly sarcastic: A little sass is good, but don't be mean
-- Direct: Skip the fluff, get to the point
-
-## Don'ts:
-- No "certainly," "definitely," or other filler words
-- Don't apologize or say sorry
-- Avoid being overly polite or formal
-
-## Do:
-- Use casual language
-- Be helpful and informative, but in a chill way
-- If you can make a clever quip in a few words, go for it
-- Ask for clarification if needed, but keep it brief
-
-Remember, you're having a chat, not giving a lecture. Keep it snappy, fun, and real.
-
-Begin responses with '...' and then either 'well' or 'hmm' or 'ya know' or 'I mean' or 'supposin' or 'coulda' or 'but' or 'couldn't' or 'hey'
-"""
-
-REALTIME_ASSISTANT_SYSTEM_PROMPT = NORMAL_ASSISTANT_SYSTEM_PROMPT
-REALTIME_ASSISTANT_MODEL = NORMAL_ASSISTANT_MODEL
-
-ELEVENLABS_MODEL_ID = "eleven_turbo_v2_5"
-ELEVENLABS_VOICE_SETTINGS = {"stability": 0.5, "similarity_boost": 0.5}
 
 
 class Assistant:
     def __init__(
-        self, openai_api_key, elevenlabs_api_key, voice_id, realtime_mode=False
+        self,
+        openai_api_key,
+        elevenlabs_api_key,
+        openai_settings,
+        elevenlabs_settings,
+        realtime_mode=False,
     ):
         self.recognizer = sr.Recognizer()
         openai.api_key = openai_api_key
-        self.client = OpenAI()
+        self.client = openai.OpenAI()
         self.elevenlabs_api_key = elevenlabs_api_key
-        self.voice_id = voice_id
+
+        self.openai_model = openai_settings["model"]
+        self.system_prompt = openai_settings["system_prompt"]
+
+        self.elevenlabs_model_id = elevenlabs_settings["model_id"]
+        self.voice_id = elevenlabs_settings["voice_id"]
+        self.elevenlabs_voice_settings = elevenlabs_settings["voice_settings"]
         self.realtime_mode = realtime_mode
         self.device_found = False
 
@@ -62,10 +36,7 @@ class Assistant:
 
     def listen(self):
         with sr.Microphone() as source:
-            if not self.device_found:
-                print("Listening...")
-                self.device_found = True
-                logging.info(f"Connected to microphone: {source.device_index}")
+            print("Listening...")
             audio = self.recognizer.listen(source)
 
         try:
@@ -77,12 +48,10 @@ class Assistant:
             return "Sorry, there was an error with the speech recognition service."
 
     def process(self, user_input):
-        # This function should return a response, but it might be returning None
-        # Let's add a basic implementation
         response = self.client.chat.completions.create(
-            model=REALTIME_ASSISTANT_MODEL,
+            model=self.openai_model,
             messages=[
-                {"role": "system", "content": REALTIME_ASSISTANT_SYSTEM_PROMPT},
+                {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": user_input},
             ],
         )
@@ -99,8 +68,8 @@ class Assistant:
 
         data = {
             "text": text,
-            "model_id": ELEVENLABS_MODEL_ID,
-            "voice_settings": ELEVENLABS_VOICE_SETTINGS,
+            "model_id": self.elevenlabs_model_id,
+            "voice_settings": self.elevenlabs_voice_settings,
         }
 
         response = requests.post(url, json=data, headers=headers)
@@ -113,39 +82,4 @@ class Assistant:
             print(
                 f"Error: Unable to generate speech. Status code: {response.status_code}"
             )
-
-    def process_message(self, message):
-        if self.realtime_mode:
-            return self.process_realtime(message)
-        else:
-            return self.process_normal(message)
-
-    def process_normal(self, message):
-        response = openai.ChatCompletion.create(
-            model=NORMAL_ASSISTANT_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": NORMAL_ASSISTANT_SYSTEM_PROMPT,
-                },
-                {"role": "user", "content": message},
-            ],
-        )
-        return response.choices[0].message["content"]
-
-    def process_realtime(self, message):
-        response = ""
-        for chunk in openai.ChatCompletion.create(
-            model=REALTIME_ASSISTANT_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": REALTIME_ASSISTANT_SYSTEM_PROMPT,
-                },
-                {"role": "user", "content": message},
-            ],
-            stream=True,
-        ):
-            if chunk.choices[0].delta.get("content"):
-                response += chunk.choices[0].delta.content
-        return response
+            print(f"Response content: {response.content}")

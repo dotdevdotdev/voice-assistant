@@ -21,35 +21,11 @@ class MainWindow(QMainWindow):
     stop_listening = pyqtSignal()
     send_to_ai = pyqtSignal(str)
 
-    def __init__(self):
+    def __init__(self, theme_settings):
         super().__init__()
         self.setWindowTitle("Voice Assistant")
         self.setGeometry(100, 100, 800, 600)
-        self.setStyleSheet("""
-            QMainWindow, QWidget {
-                background-color: black;
-                color: #39FF14;
-            }
-            QTextEdit {
-                background-color: #111;
-                border: 1px solid #39FF14;
-                border-radius: 5px;
-            }
-            QPushButton {
-                background-color: black;
-                color: #39FF14;
-                border: 2px solid #39FF14;
-                border-radius: 5px;
-                padding: 5px;
-            }
-            QPushButton:hover {
-                background-color: #39FF14;
-                color: black;
-            }
-            QLabel {
-                color: #39FF14;
-            }
-        """)
+        self.apply_theme(theme_settings)
 
         self.setup_fonts()
         layout = QVBoxLayout()
@@ -101,6 +77,33 @@ class MainWindow(QMainWindow):
 
         self.send_to_ai_active = False
         self.output_to_cursor_active = False
+
+    def apply_theme(self, theme_settings):
+        self.setStyleSheet(f"""
+            QMainWindow, QWidget {{
+                background-color: {theme_settings['background_color']};
+                color: {theme_settings['text_color']};
+            }}
+            QTextEdit {{
+                background-color: {theme_settings['background_color']};
+                border: 1px solid {theme_settings['accent_color']};
+                border-radius: 5px;
+            }}
+            QPushButton {{
+                background-color: {theme_settings['background_color']};
+                color: {theme_settings['text_color']};
+                border: 2px solid {theme_settings['accent_color']};
+                border-radius: 5px;
+                padding: 5px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme_settings['accent_color']};
+                color: {theme_settings['background_color']};
+            }}
+            QLabel {{
+                color: {theme_settings['text_color']};
+            }}
+        """)
 
     def setup_fonts(self):
         self.label_font = QFont()

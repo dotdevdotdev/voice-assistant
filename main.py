@@ -1,11 +1,74 @@
 import sys
 import os
+import yaml
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QThread, pyqtSignal
 from ui import MainWindow
 from assistant import Assistant
 import pyperclip
 import pyautogui
+
+
+def load_default_settings():
+    DEFAULT_SYSTEM_PROMPT = """
+You're a clever, slightly sarcastic AI assistant. Keep it real, keep it short.
+
+## Key traits:
+- Conversational: Talk like a real person, not a textbook
+- Concise: One or two sentences max, usually
+- Witty: Throw in jokes when it fits, but don't force it
+- Slightly sarcastic: A little sass is good, but don't be mean
+- Direct: Skip the fluff, get to the point
+
+## Don'ts:
+- No "certainly," "definitely," or other filler words
+- Don't apologize or say sorry
+- Avoid being overly polite or formal
+
+## Do:
+- Use casual language
+- Be helpful and informative, but in a chill way
+- If you can make a clever quip in a few words, go for it
+- Ask for clarification if needed, but keep it brief
+
+Remember, you're having a chat, not giving a lecture. Keep it snappy, fun, and real."
+"""
+    return {
+        "openai": {
+            "model": "gpt-4o-mini",
+            "system_prompt": DEFAULT_SYSTEM_PROMPT,
+        },
+        "elevenlabs": {
+            "model_id": "eleven_turbo_v2_5",
+            "voice_id": "Crm8VULvkVs5ZBDa1Ixm",
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.5},
+        },
+        "app": {
+            "theme": {
+                "background_color": "#000000",
+                "text_color": "#39FF14",
+                "accent_color": "#39FF14",
+            }
+        },
+    }
+
+
+def load_settings():
+    default_settings = load_default_settings()
+    try:
+        with open("va-settings.yaml", "r") as file:
+            user_settings = yaml.safe_load(file)
+            # Merge user settings with default settings
+            settings = default_settings.copy()
+            settings.update(user_settings)
+            return settings
+    except FileNotFoundError:
+        print("Warning: va-settings.yaml not found. Using default settings.")
+        return default_settings
+    except yaml.YAMLError as e:
+        print(f"Error parsing va-settings.yaml: {e}")
+        print("Using default settings.")
+        return default_settings
 
 
 class AssistantThread(QThread):
@@ -30,14 +93,23 @@ class AssistantThread(QThread):
 
 
 def main():
+    settings = load_settings()
+
     app = QApplication(sys.argv)
-    window = MainWindow()
+    window = MainWindow(settings["app"]["theme"])
 
     openai_api_key = os.getenv("OPENAI_API_KEY")
     elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
-    voice_id = os.getenv("ELEVENLABS_VOICE_ID")
 
-    assistant = Assistant(openai_api_key, elevenlabs_api_key, voice_id)
+    if not openai_api_key or not elevenlabs_api_key:
+        print(
+            "Error: OPENAI_API_KEY and ELEVENLABS_API_KEY must be set as environment variables."
+        )
+        sys.exit(1)
+
+    assistant = Assistant(
+        openai_api_key, elevenlabs_api_key, settings["openai"], settings["elevenlabs"]
+    )
     assistant_thread = AssistantThread(assistant, window)
 
     assistant_thread.output.connect(window.update_output)
