@@ -41,10 +41,13 @@ class Assistant:
 
         try:
             text = self.recognizer.recognize_google(audio)
+            print(f"You said: {text}")
             return text
         except sr.UnknownValueError:
+            print("Sorry, I couldn't understand that.")
             return "Sorry, I couldn't understand that."
         except sr.RequestError:
+            print("Sorry, there was an error with the speech recognition service.")
             return "Sorry, there was an error with the speech recognition service."
 
     def process(self, user_input):
