@@ -42,9 +42,14 @@ def main():
 
     assistant_thread.output.connect(window.update_output)
     assistant_thread.update_dictation.connect(window.update_dictation)
-    window.send_to_ai.connect(
-        lambda text: window.update_output(f"AI: {assistant.process(text)}")
-    )
+
+    def process_and_speak_ai_response(text):
+        if window.send_to_ai_active:
+            response = assistant.process(text)
+            window.update_output(f"AI: {response}")
+            assistant.speak(response)
+
+    window.send_to_ai.connect(process_and_speak_ai_response)
     window.stop_listening.connect(assistant_thread.stop)
 
     window.show()
