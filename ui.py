@@ -8,9 +8,10 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QCheckBox,
     QComboBox,
+    QStyle,
 )
 from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon
 import pyperclip
 import pyautogui
 
@@ -19,12 +20,36 @@ class MainWindow(QMainWindow):
     start_listening = pyqtSignal()
     stop_listening = pyqtSignal()
     send_to_ai = pyqtSignal(str)
-    speak_response = pyqtSignal(str)  # New signal for speaking responses
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Voice Assistant")
-        self.setGeometry(100, 100, 800, 600)  # Increased window size
+        self.setGeometry(100, 100, 800, 600)
+        self.setStyleSheet("""
+            QMainWindow, QWidget {
+                background-color: black;
+                color: #39FF14;
+            }
+            QTextEdit {
+                background-color: #111;
+                border: 1px solid #39FF14;
+                border-radius: 5px;
+            }
+            QPushButton {
+                background-color: black;
+                color: #39FF14;
+                border: 2px solid #39FF14;
+                border-radius: 5px;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                background-color: #39FF14;
+                color: black;
+            }
+            QLabel {
+                color: #39FF14;
+            }
+        """)
 
         self.setup_fonts()
         layout = QVBoxLayout()
@@ -37,6 +62,21 @@ class MainWindow(QMainWindow):
         self.output_text.setReadOnly(True)
         self.output_text.setFont(self.text_font)
         layout.addWidget(self.output_text)
+
+        dictation_layout = QHBoxLayout()
+        dictation_label = QLabel("Dictation Area")
+        dictation_label.setFont(self.label_font)
+        dictation_layout.addWidget(dictation_label)
+
+        self.copy_clipboard_button = QPushButton()
+        copy_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton)
+        self.copy_clipboard_button.setIcon(copy_icon)
+        self.copy_clipboard_button.setFixedSize(30, 30)
+        self.copy_clipboard_button.setToolTip("Copy to Clipboard")
+        self.copy_clipboard_button.clicked.connect(self.on_copy_to_clipboard)
+        dictation_layout.addWidget(self.copy_clipboard_button)
+
+        layout.addLayout(dictation_layout)
 
         self.dictation_area = QTextEdit()
         self.dictation_area.setPlaceholderText("Transcribed text will appear here...")
@@ -52,11 +92,6 @@ class MainWindow(QMainWindow):
         self.output_cursor_toggle = self.create_toggle_button("Output to Cursor")
         self.output_cursor_toggle.clicked.connect(self.on_output_cursor_toggle)
         button_layout.addWidget(self.output_cursor_toggle)
-
-        self.copy_clipboard_button = QPushButton("Copy to Clipboard")
-        self.copy_clipboard_button.clicked.connect(self.on_copy_to_clipboard)
-        self.copy_clipboard_button.setFont(self.button_font)
-        button_layout.addWidget(self.copy_clipboard_button)
 
         layout.addLayout(button_layout)
 
@@ -101,8 +136,6 @@ class MainWindow(QMainWindow):
 
     def update_output(self, text):
         self.output_text.append(text)
-        if self.send_to_ai_active and text.startswith("AI:"):
-            self.speak_response.emit(text[4:])  # Emit signal to speak AI response
 
     def update_dictation(self, text):
         self.dictation_area.setPlainText(text)
