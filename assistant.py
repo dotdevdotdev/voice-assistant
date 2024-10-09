@@ -67,7 +67,7 @@ class Assistant:
         }
 
         data = {
-            "text": text,
+            "text": " <break time='0.15s' /> " + text,
             "model_id": self.elevenlabs_model_id,
             "voice_settings": self.elevenlabs_voice_settings,
         }

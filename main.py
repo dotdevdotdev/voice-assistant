@@ -90,9 +90,9 @@ class AssistantThread(QThread):
                 if clipboard_content != self.last_clipboard_content:
                     self.last_clipboard_content = clipboard_content
                     self.update_dictation.emit(clipboard_content)
-                    self.assistant.speak(
-                        clipboard_content
-                    )  # Speak the clipboard content
+
+                    self.assistant.speak(clipboard_content)
+
                     if self.window.send_to_ai_active:
                         self.process_and_speak_ai_response(clipboard_content)
             else:
