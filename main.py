@@ -7,6 +7,7 @@ from ui import MainWindow
 from assistant import Assistant
 import pyperclip
 import pyautogui
+import asyncio
 
 
 def load_default_settings():
@@ -72,34 +73,24 @@ def load_settings():
 
 
 class AssistantThread(QThread):
-    output = pyqtSignal(str)
     update_dictation = pyqtSignal(str)
+    update_response = pyqtSignal(str)
 
-    def __init__(self, assistant, window):
+    def __init__(self, assistant):
         super().__init__()
         self.assistant = assistant
-        self.window = window
-        self.running = True
-        self.monitor_clipboard = False
-        self.last_clipboard_content = ""
+        self.loop = asyncio.new_event_loop()
 
     def run(self):
-        while self.running:
-            if self.monitor_clipboard:
-                clipboard_content = pyperclip.paste()
-                if clipboard_content != self.last_clipboard_content:
-                    self.last_clipboard_content = clipboard_content
-                    self.update_dictation.emit(clipboard_content)
+        asyncio.set_event_loop(self.loop)
+        while True:
+            user_input = self.loop.run_until_complete(self.assistant.listen())
+            self.update_dictation.emit(user_input)
 
-                    self.assistant.speak(clipboard_content)
+            response = self.assistant.process(user_input)
+            self.update_response.emit(response)
 
-                    if self.window.send_to_ai_active:
-                        self.process_and_speak_ai_response(clipboard_content)
-            else:
-                user_input = self.assistant.listen()
-                if user_input and user_input != "Sorry, I couldn't understand that.":
-                    self.output.emit(f"You said: {user_input}")
-                    self.update_dictation.emit(user_input)
+            self.assistant.speak(response)
 
     def stop(self):
         self.running = False
@@ -134,10 +125,10 @@ def main():
     assistant = Assistant(
         openai_api_key, elevenlabs_api_key, settings["openai"], settings["elevenlabs"]
     )
-    assistant_thread = AssistantThread(assistant, window)
+    assistant_thread = AssistantThread(assistant)  # Remove the window parameter
 
-    assistant_thread.output.connect(window.update_output)
     assistant_thread.update_dictation.connect(window.update_dictation)
+    assistant_thread.update_response.connect(window.update_output)
 
     def process_and_speak_ai_response(text):
         if window.send_to_ai_active:
