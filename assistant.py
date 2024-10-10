@@ -18,20 +18,21 @@ class Assistant:
         self,
         openai_api_key,
         elevenlabs_api_key,
+        deepgram_api_key,
         openai_settings,
         elevenlabs_settings,
         realtime_mode=False,
     ):
         self.recognizer = sr.Recognizer()
+
+        self.openai_api_key = openai_api_key
+        self.elevenlabs_api_key = elevenlabs_api_key
+        self.deepgram_api_key = deepgram_api_key
+
+        self.deepgram = DeepgramClient(deepgram_api_key)
+
         openai.api_key = openai_api_key
         self.client = openai.OpenAI()
-        self.elevenlabs_api_key = elevenlabs_api_key
-
-        # Initialize Deepgram client with API key from environment variable
-        deepgram_api_key = os.environ.get("DEEPGRAM_API_KEY")
-        if not deepgram_api_key:
-            raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
-        self.deepgram = DeepgramClient(deepgram_api_key)
 
         self.openai_model = openai_settings["model"]
         self.system_prompt = openai_settings["system_prompt"]

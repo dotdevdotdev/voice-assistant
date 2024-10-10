@@ -22,6 +22,7 @@ class MainWindow(QMainWindow):
     send_to_ai = pyqtSignal(str)
     start_clipboard_monitoring = pyqtSignal()
     stop_clipboard_monitoring = pyqtSignal()
+    send_ai_toggle = pyqtSignal(bool)
 
     def __init__(self, theme_settings):
         super().__init__()
@@ -148,10 +149,6 @@ class MainWindow(QMainWindow):
 
     def update_dictation(self, text):
         self.dictation_area.setPlainText(text)
-        if self.send_to_ai_active:
-            self.send_to_ai.emit(text)
-        if self.output_to_cursor_active:
-            pyautogui.write(text)
 
     def on_send_ai_toggle(self):
         self.send_to_ai_active = self.send_ai_toggle.isChecked()
