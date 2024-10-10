@@ -8,6 +8,7 @@ from assistant import Assistant
 import pyperclip
 import pyautogui
 import asyncio
+import threading
 
 
 def load_default_settings():
@@ -84,6 +85,7 @@ class AssistantThread(QThread):
         self.output_to_cursor_active = False
         self.last_processed_input = ""
         self.last_processed_response = ""
+        self.multi_threaded = False
 
     def run(self):
         asyncio.set_event_loop(self.loop)
@@ -101,12 +103,19 @@ class AssistantThread(QThread):
                     pyautogui.write(user_input)
 
                 if self.send_to_ai_active:
-                    response = self.assistant.process(user_input)
-                    self.update_response.emit(response)
 
-                    if response:
-                        self.last_processed_response = response
-                        self.assistant.speak(response)
+                    def process_and_speak():
+                        response = self.assistant.process(user_input)
+                        self.update_response.emit(response)
+
+                        if response:
+                            self.last_processed_response = response
+                            self.assistant.speak(response)
+
+                    if self.multi_threaded:
+                        threading.Thread(target=process_and_speak).start()
+                    else:
+                        process_and_speak()
 
     def stop(self):
         self.running = False
