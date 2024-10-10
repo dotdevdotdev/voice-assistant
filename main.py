@@ -85,12 +85,14 @@ class AssistantThread(QThread):
         asyncio.set_event_loop(self.loop)
         while True:
             user_input = self.loop.run_until_complete(self.assistant.listen())
-            self.update_dictation.emit(user_input)
+            if user_input:
+                self.update_dictation.emit(user_input)
 
-            response = self.assistant.process(user_input)
-            self.update_response.emit(response)
+                response = self.assistant.process(user_input)
+                self.update_response.emit(response)
 
-            self.assistant.speak(response)
+                if response:
+                    self.assistant.speak(response)
 
     def stop(self):
         self.running = False
