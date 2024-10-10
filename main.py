@@ -82,17 +82,20 @@ class AssistantThread(QThread):
         self.loop = asyncio.new_event_loop()
         self.send_to_ai_active = False
         self.output_to_cursor_active = False
-        self.last_processed_input = ""  # Add this line
+        self.last_processed_input = ""
+        self.last_processed_response = ""
 
     def run(self):
         asyncio.set_event_loop(self.loop)
         while True:
             user_input = self.loop.run_until_complete(self.assistant.listen())
-            if user_input:
+            if (
+                user_input
+                and user_input != self.last_processed_input
+                and user_input != self.last_processed_response
+            ):
                 self.update_dictation.emit(user_input)
-
-                if user_input != self.last_processed_input:
-                    self.last_processed_input = user_input
+                self.last_processed_input = user_input
 
                 if self.output_to_cursor_active:
                     pyautogui.write(user_input)
@@ -102,6 +105,7 @@ class AssistantThread(QThread):
                     self.update_response.emit(response)
 
                     if response:
+                        self.last_processed_response = response
                         self.assistant.speak(response)
 
     def stop(self):
