@@ -10,6 +10,8 @@ import asyncio
 import threading
 import argparse
 import pyperclip
+import datetime
+import json
 
 
 def load_default_settings():
@@ -53,6 +55,7 @@ Remember, you're having a chat, not giving a lecture. Keep it snappy, fun, and r
                 "accent_color": "#39FF14",
             }
         },
+        "user": {"username": "default_user"},
     }
 
 
@@ -115,11 +118,48 @@ class ClipboardListenerThread(QThread):
         print("Clipboard listener stopped")  # Debug print
 
 
-class AssistantThread(QThread):
-    update_dictation = pyqtSignal(str)
-    update_response = pyqtSignal(str)
+class AIChatHistory:
+    def __init__(self, log_file_path, va_name, username):
+        self.history = []
+        self.log_file_path = log_file_path
+        self.va_name = va_name
+        self.username = username
+        self.load_history()
 
-    def __init__(self, assistant):
+    def add_entry(self, entry_type, content):
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry = {
+            "timestamp": timestamp,
+            "type": entry_type,
+            "content": content,
+            "va_name": self.va_name,
+            "username": self.username,
+        }
+        self.history.append(entry)
+        self.save_history()
+
+    def get_history(self):
+        return "\n".join(
+            [
+                f"[{entry['timestamp']}] {entry['username']} to {entry['va_name']} - {entry['type']}: {entry['content']}"
+                for entry in self.history
+            ]
+        )
+
+    def load_history(self):
+        if os.path.exists(self.log_file_path):
+            with open(self.log_file_path, "r") as f:
+                self.history = json.load(f)
+
+    def save_history(self):
+        with open(self.log_file_path, "w") as f:
+            json.dump(self.history, f, indent=2)
+
+
+class AssistantThread(QThread):
+    update_chat_history = pyqtSignal(str)
+
+    def __init__(self, assistant, log_file_path, va_name, username):
         super().__init__()
         self.assistant = assistant
         self.loop = asyncio.new_event_loop()
@@ -129,6 +169,7 @@ class AssistantThread(QThread):
         self.last_processed_response = ""
         self.multi_threaded = False
         self.monitor_clipboard = False
+        self.chat_history = AIChatHistory(log_file_path, va_name, username)
 
     def run(self):
         asyncio.set_event_loop(self.loop)
@@ -139,7 +180,8 @@ class AssistantThread(QThread):
                 and user_input != self.last_processed_input
                 and user_input != self.last_processed_response
             ):
-                self.update_dictation.emit(user_input)
+                self.chat_history.add_entry("User", user_input)
+                self.update_chat_history.emit(self.chat_history.get_history())
                 self.last_processed_input = user_input
 
                 if self.output_to_cursor_active:
@@ -149,7 +191,8 @@ class AssistantThread(QThread):
 
                     def process_and_speak():
                         response_text, cached_audio = self.assistant.process(user_input)
-                        self.update_response.emit(response_text)
+                        self.chat_history.add_entry("Assistant", response_text)
+                        self.update_chat_history.emit(self.chat_history.get_history())
 
                         if response_text:
                             self.last_processed_response = response_text
@@ -175,7 +218,8 @@ class AssistantThread(QThread):
         print(f"Processing clipboard content: {content}")  # Debug print
         if self.monitor_clipboard:
             print("Clipboard monitoring is active")  # Debug print
-            self.update_response.emit(f"Clipboard: {content}")
+            self.chat_history.add_entry("Clipboard", content)
+            self.update_chat_history.emit(self.chat_history.get_history())
             self.assistant.speak(content)
         else:
             print("Clipboard monitoring is not active")  # Debug print
@@ -203,6 +247,17 @@ def main():
         )
         sys.exit(1)
 
+    # Create data directory if it doesn't exist
+    data_dir = os.path.join(os.getcwd(), "data")
+    os.makedirs(data_dir, exist_ok=True)
+
+    # Use VA name and username from settings for log file and audio cache
+    va_name = settings.get("va_name", "default")
+    username = settings["user"]["username"]
+    log_file_path = os.path.join(data_dir, f"chat_history_{va_name}_{username}.json")
+    audio_cache_dir = os.path.join(data_dir, "audio_cache", va_name, username)
+    os.makedirs(audio_cache_dir, exist_ok=True)
+
     assistant = Assistant(
         openai_api_key,
         elevenlabs_api_key,
@@ -210,11 +265,10 @@ def main():
         settings["openai"],
         settings["elevenlabs"],
     )
-    assistant_thread = AssistantThread(assistant)
+    assistant_thread = AssistantThread(assistant, log_file_path, va_name, username)
     clipboard_listener = ClipboardListenerThread()
 
-    assistant_thread.update_dictation.connect(window.update_dictation)
-    assistant_thread.update_response.connect(window.update_output)
+    assistant_thread.update_chat_history.connect(window.update_chat_history)
     clipboard_listener.clipboard_changed.connect(
         assistant_thread.process_clipboard_content
     )

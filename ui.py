@@ -144,11 +144,16 @@ class MainWindow(QMainWindow):
         """)
         return button
 
-    def update_output(self, text):
-        self.output_text.append(text)
-
-    def update_dictation(self, text):
-        self.dictation_area.setPlainText(text)
+    def update_chat_history(self, chat_history):
+        self.dictation_area.setPlainText(chat_history)
+        self.output_text.setPlainText(chat_history)
+        # Scroll to the bottom of both text areas
+        self.dictation_area.verticalScrollBar().setValue(
+            self.dictation_area.verticalScrollBar().maximum()
+        )
+        self.output_text.verticalScrollBar().setValue(
+            self.output_text.verticalScrollBar().maximum()
+        )
 
     def on_send_ai_toggle(self):
         self.send_to_ai_active = self.send_ai_toggle.isChecked()
