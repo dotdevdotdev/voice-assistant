@@ -46,5 +46,5 @@ env/
 *.sqlite3
 *va-*.yaml
 
-data/
-temp/
+/data/
+/data/**
