@@ -44,3 +44,4 @@ env/
 # Miscellaneous
 *.log
 *.sqlite3
+*va-*.yaml

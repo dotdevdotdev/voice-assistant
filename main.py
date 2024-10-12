@@ -2,13 +2,14 @@ import sys
 import os
 import yaml
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal, QTimer
 from ui import MainWindow
 from assistant import Assistant
-import pyperclip
 import pyautogui
 import asyncio
 import threading
+import argparse
+import pyperclip
 
 
 def load_default_settings():
@@ -55,22 +56,63 @@ Remember, you're having a chat, not giving a lecture. Keep it snappy, fun, and r
     }
 
 
-def load_settings():
+def load_settings(settings_file=None):
     default_settings = load_default_settings()
-    try:
-        with open("va-settings.yaml", "r") as file:
-            user_settings = yaml.safe_load(file)
-            # Merge user settings with default settings
-            settings = default_settings.copy()
-            settings.update(user_settings)
-            return settings
-    except FileNotFoundError:
-        print("Warning: va-settings.yaml not found. Using default settings.")
-        return default_settings
-    except yaml.YAMLError as e:
-        print(f"Error parsing va-settings.yaml: {e}")
-        print("Using default settings.")
-        return default_settings
+    if settings_file:
+        try:
+            with open(settings_file, "r") as file:
+                user_settings = yaml.safe_load(file)
+                # Merge user settings with default settings
+                settings = default_settings.copy()
+                settings.update(user_settings)
+                return settings
+        except FileNotFoundError:
+            print(f"Warning: {settings_file} not found. Using default settings.")
+            return default_settings
+        except yaml.YAMLError as e:
+            print(f"Error parsing {settings_file}: {e}")
+            print("Using default settings.")
+            return default_settings
+    else:
+        # Try to load va-settings.yaml if no custom file is specified
+        try:
+            with open("va-settings.yaml", "r") as file:
+                user_settings = yaml.safe_load(file)
+                settings = default_settings.copy()
+                settings.update(user_settings)
+                return settings
+        except FileNotFoundError:
+            print("Warning: va-settings.yaml not found. Using default settings.")
+            return default_settings
+        except yaml.YAMLError as e:
+            print(f"Error parsing va-settings.yaml: {e}")
+            print("Using default settings.")
+            return default_settings
+
+
+class ClipboardListenerThread(QThread):
+    clipboard_changed = pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+        self.running = True
+        self.last_text = ""
+
+    def run(self):
+        while self.running:
+            try:
+                text = pyperclip.paste()
+                if text != self.last_text:
+                    print(f"Clipboard changed: {text}")  # Debug print
+                    self.last_text = text
+                    self.clipboard_changed.emit(text)
+            except Exception as e:
+                print(f"Error reading clipboard: {e}")
+            self.msleep(100)  # Check every 100ms
+
+    def stop(self):
+        self.running = False
+        print("Clipboard listener stopped")  # Debug print
 
 
 class AssistantThread(QThread):
@@ -86,6 +128,7 @@ class AssistantThread(QThread):
         self.last_processed_input = ""
         self.last_processed_response = ""
         self.multi_threaded = False
+        self.monitor_clipboard = False
 
     def run(self):
         asyncio.set_event_loop(self.loop)
@@ -117,31 +160,32 @@ class AssistantThread(QThread):
                     else:
                         process_and_speak()
 
-    def stop(self):
-        self.running = False
-
-    def start_clipboard_monitoring(self):
-        self.monitor_clipboard = True
-
-    def stop_clipboard_monitoring(self):
-        self.monitor_clipboard = False
-
-    def process_and_speak_ai_response(self, text):
-        response = self.assistant.process(text)
-        self.output.emit(f"AI: {response}")
-        self.assistant.speak(response)
-
-    def set_send_to_ai_active(self, active):  # Add this method
+    def set_send_to_ai_active(self, active):
         self.send_to_ai_active = active
         if not active:
-            self.last_processed_input = ""  # Reset when toggled off
+            self.last_processed_input = ""
 
     def set_output_to_cursor_active(self, active):
         self.output_to_cursor_active = active
 
+    def process_clipboard_content(self, content):
+        print(f"Processing clipboard content: {content}")  # Debug print
+        if self.monitor_clipboard:
+            print("Clipboard monitoring is active")  # Debug print
+            self.update_response.emit(f"Clipboard: {content}")
+            self.assistant.speak(content)
+        else:
+            print("Clipboard monitoring is not active")  # Debug print
+
 
 def main():
-    settings = load_settings()
+    parser = argparse.ArgumentParser(
+        description="Run the AI assistant with custom settings."
+    )
+    parser.add_argument("--settings", help="Path to the custom settings YAML file")
+    args = parser.parse_args()
+
+    settings = load_settings(args.settings)
 
     app = QApplication(sys.argv)
     window = MainWindow(settings["app"]["theme"])
@@ -163,12 +207,15 @@ def main():
         settings["openai"],
         settings["elevenlabs"],
     )
-    assistant_thread = AssistantThread(assistant)  # Remove the window parameter
+    assistant_thread = AssistantThread(assistant)
+    clipboard_listener = ClipboardListenerThread()
 
     assistant_thread.update_dictation.connect(window.update_dictation)
     assistant_thread.update_response.connect(window.update_output)
+    clipboard_listener.clipboard_changed.connect(
+        assistant_thread.process_clipboard_content
+    )
 
-    # Change this line to connect to the button's clicked signal
     window.send_ai_toggle.clicked.connect(
         lambda checked: assistant_thread.set_send_to_ai_active(checked)
     )
@@ -177,22 +224,18 @@ def main():
         lambda checked: assistant_thread.set_output_to_cursor_active(checked)
     )
 
-    # def process_and_speak_ai_response(text):
-    #     if window.send_to_ai_active:
-    #         response = assistant.process(text)
-    #         window.update_output(f"2AI: {response}")
-    #         assistant.speak(response)
-
-    # window.send_to_ai.connect(process_and_speak_ai_response)
-    # window.stop_listening.connect(assistant_thread.stop)
-
     window.start_clipboard_monitoring.connect(
-        assistant_thread.start_clipboard_monitoring
+        lambda: setattr(assistant_thread, "monitor_clipboard", True)
     )
-    window.stop_clipboard_monitoring.connect(assistant_thread.stop_clipboard_monitoring)
+    window.stop_clipboard_monitoring.connect(
+        lambda: setattr(assistant_thread, "monitor_clipboard", False)
+    )
 
     window.show()
     assistant_thread.start()
+    clipboard_listener.start()
+
+    app.aboutToQuit.connect(clipboard_listener.stop)
 
     sys.exit(app.exec())
 
