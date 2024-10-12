@@ -148,12 +148,15 @@ class AssistantThread(QThread):
                 if self.send_to_ai_active:
 
                     def process_and_speak():
-                        response = self.assistant.process(user_input)
-                        self.update_response.emit(response)
+                        response_text, cached_audio = self.assistant.process(user_input)
+                        self.update_response.emit(response_text)
 
-                        if response:
-                            self.last_processed_response = response
-                            self.assistant.speak(response)
+                        if response_text:
+                            self.last_processed_response = response_text
+                            if cached_audio:
+                                self.assistant.play_audio(cached_audio)
+                            else:
+                                self.assistant.speak(response_text)
 
                     if self.multi_threaded:
                         threading.Thread(target=process_and_speak).start()
