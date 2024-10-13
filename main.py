@@ -3,7 +3,7 @@ import os
 import yaml
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QThread, pyqtSignal, QTimer
-from ui import MainWindow
+from ui import MainWindow, ChatWindow
 from assistant import Assistant
 import pyautogui
 import asyncio
@@ -158,6 +158,7 @@ class AIChatHistory:
 
 class AssistantThread(QThread):
     update_chat_history = pyqtSignal(str)
+    write_to_cursor = pyqtSignal(str)  # New signal for writing to cursor
 
     def __init__(self, assistant, log_file_path, va_name, username):
         super().__init__()
@@ -170,6 +171,9 @@ class AssistantThread(QThread):
         self.multi_threaded = False
         self.monitor_clipboard = False
         self.chat_history = AIChatHistory(log_file_path, va_name, username)
+
+    def set_chat_window(self, chat_window):
+        self.chat_window = chat_window
 
     def run(self):
         asyncio.set_event_loop(self.loop)
@@ -224,6 +228,35 @@ class AssistantThread(QThread):
         else:
             print("Clipboard monitoring is not active")  # Debug print
 
+    def process_user_input(self, user_input):
+        self.chat_history.add_entry("User", user_input)
+        self.update_chat_history.emit(self.chat_history.get_history())
+        self.last_processed_input = user_input
+
+        if self.output_to_cursor_active:
+            self.write_to_cursor.emit(
+                user_input
+            )  # Emit signal instead of directly writing
+
+        if self.send_to_ai_active:
+
+            def process_and_speak():
+                response_text, cached_audio = self.assistant.process(user_input)
+                self.chat_history.add_entry("Assistant", response_text)
+                self.update_chat_history.emit(self.chat_history.get_history())
+
+                if response_text:
+                    self.last_processed_response = response_text
+                    if cached_audio:
+                        self.assistant.play_audio(cached_audio)
+                    else:
+                        self.assistant.speak(response_text)
+
+            if self.multi_threaded:
+                threading.Thread(target=process_and_speak).start()
+            else:
+                process_and_speak()
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -235,7 +268,7 @@ def main():
     settings = load_settings(args.settings)
 
     app = QApplication(sys.argv)
-    window = MainWindow(settings["app"]["theme"])
+    main_window = MainWindow()
 
     openai_api_key = os.getenv("OPENAI_API_KEY")
     elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
@@ -265,35 +298,49 @@ def main():
         settings["openai"],
         settings["elevenlabs"],
     )
-    assistant_thread = AssistantThread(assistant, log_file_path, va_name, username)
     clipboard_listener = ClipboardListenerThread()
 
-    assistant_thread.update_chat_history.connect(window.update_chat_history)
     clipboard_listener.clipboard_changed.connect(
-        assistant_thread.process_clipboard_content
+        lambda content: [
+            thread.process_clipboard_content(content) for thread in assistant_threads
+        ]
     )
 
-    window.send_ai_toggle.clicked.connect(
-        lambda checked: assistant_thread.set_send_to_ai_active(checked)
-    )
+    assistant_threads = []
 
-    window.output_cursor_toggle.clicked.connect(
-        lambda checked: assistant_thread.set_output_to_cursor_active(checked)
-    )
+    def create_new_chat(va_name):
+        chat_window = ChatWindow(va_name)
+        assistant_thread = AssistantThread(assistant, log_file_path, va_name, username)
+        assistant_thread.set_chat_window(chat_window)
 
-    window.start_clipboard_monitoring.connect(
-        lambda: setattr(assistant_thread, "monitor_clipboard", True)
-    )
-    window.stop_clipboard_monitoring.connect(
-        lambda: setattr(assistant_thread, "monitor_clipboard", False)
-    )
+        chat_window.send_message.connect(assistant_thread.process_user_input)
+        chat_window.send_ai_toggle.clicked.connect(
+            assistant_thread.set_send_to_ai_active
+        )
+        chat_window.output_cursor_toggle.clicked.connect(
+            assistant_thread.set_output_to_cursor_active
+        )
+        chat_window.monitor_clipboard_toggle.clicked.connect(
+            lambda checked: setattr(assistant_thread, "monitor_clipboard", checked)
+        )
 
-    window.show()
-    assistant_thread.start()
+        assistant_thread.update_chat_history.connect(chat_window.update_chat_history)
+        assistant_thread.write_to_cursor.connect(
+            lambda text: pyautogui.write(text)
+        )  # Connect new signal
+
+        assistant_thread.start()
+        main_window.add_chat_window(chat_window)
+        assistant_threads.append(assistant_thread)
+
+    main_window.new_chat_window.connect(create_new_chat)
+
+    # Create an initial chat window
+    create_new_chat("VA_0")
+
+    main_window.show()
     clipboard_listener.start()
-
     app.aboutToQuit.connect(clipboard_listener.stop)
-
     sys.exit(app.exec())
 
 
