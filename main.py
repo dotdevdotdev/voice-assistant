@@ -2,11 +2,10 @@ import sys
 import os
 import yaml
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QThread, pyqtSignal, QTimer
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QThread
 from ui import MainWindow, ChatWindow
 from assistant import Assistant
 import pyautogui
-import asyncio
 import threading
 import argparse
 import pyperclip
@@ -98,29 +97,44 @@ def load_settings(settings_file=None):
             return default_settings
 
 
-class ClipboardListenerThread(QThread):
+class ClipboardListener(QObject):
     clipboard_changed = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
         self.running = True
         self.last_text = ""
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.check_clipboard)
+        self.timer.start(100)  # Check every 100ms
 
-    def run(self):
-        while self.running:
+    def check_clipboard(self):
+        if self.running:
             try:
                 text = pyperclip.paste()
                 if text != self.last_text:
-                    print(f"Clipboard changed: {text}")  # Debug print
                     self.last_text = text
                     self.clipboard_changed.emit(text)
             except Exception as e:
                 print(f"Error reading clipboard: {e}")
-            self.msleep(100)  # Check every 100ms
 
     def stop(self):
         self.running = False
-        print("Clipboard listener stopped")  # Debug print
+        self.timer.stop()
+
+
+class ClipboardThread(QThread):
+    def __init__(self, clipboard_listener):
+        super().__init__()
+        self.clipboard_listener = clipboard_listener
+
+    def run(self):
+        while self.clipboard_listener.running:
+            QThread.msleep(100)
+
+    def stop(self):
+        self.clipboard_listener.stop()
+        self.wait()
 
 
 class AIChatHistory:
@@ -161,21 +175,24 @@ class AIChatHistory:
             json.dump(self.history, f, indent=2)
 
 
-class AssistantThread(QThread):
+class AssistantManager(QObject):
     update_chat_history = pyqtSignal(str)
     write_to_cursor = pyqtSignal(str)
 
     def __init__(self, assistant, log_file_path, va_name, username):
         super().__init__()
         self.assistant = assistant
-        self.loop = asyncio.new_event_loop()
-        self.send_to_ai_active = False
+        self.send_to_ai_active = True
         self.output_to_cursor_active = False
         self.last_processed_input = ""
         self.last_processed_response = ""
-        self.multi_threaded = False
         self.monitor_clipboard = False
         self.chat_history = AIChatHistory(log_file_path, va_name, username)
+        self.clipboard_listener = ClipboardListener()
+        self.clipboard_thread = ClipboardThread(self.clipboard_listener)
+        self.clipboard_listener.clipboard_changed.connect(
+            self.process_clipboard_content
+        )
 
         # Emit the initial chat history
         initial_history = self.chat_history.get_history()
@@ -184,49 +201,41 @@ class AssistantThread(QThread):
 
     def set_chat_window(self, chat_window):
         self.chat_window = chat_window
+        self.chat_window.output_to_cursor_toggled.connect(
+            self.set_output_to_cursor_active
+        )
+        self.chat_window.send_ai_toggle.toggled.connect(self.set_send_to_ai_active)
+        self.chat_window.monitor_clipboard_toggled.connect(
+            self.set_monitor_clipboard_active
+        )
 
-    def run(self):
-        asyncio.set_event_loop(self.loop)
-        while True:
-            user_input = self.loop.run_until_complete(self.assistant.listen())
-            if (
-                user_input
-                and user_input != self.last_processed_input
-                and user_input != self.last_processed_response
-            ):
-                self.chat_history.add_entry("User", user_input)
-                self.update_chat_history.emit(self.chat_history.get_history())
-                self.last_processed_input = user_input
-
-                if self.output_to_cursor_active:
-                    pyautogui.write(user_input)
-
-                if self.send_to_ai_active:
-
-                    def process_and_speak():
-                        response_text, cached_audio = self.assistant.process(user_input)
-                        self.chat_history.add_entry("Assistant", response_text)
-                        self.update_chat_history.emit(self.chat_history.get_history())
-
-                        if response_text:
-                            self.last_processed_response = response_text
-                            if cached_audio:
-                                self.assistant.play_audio(cached_audio)
-                            else:
-                                self.assistant.speak(response_text)
-
-                    if self.multi_threaded:
-                        threading.Thread(target=process_and_speak).start()
-                    else:
-                        process_and_speak()
+    def set_output_to_cursor_active(self, active):
+        self.output_to_cursor_active = active
 
     def set_send_to_ai_active(self, active):
         self.send_to_ai_active = active
         if not active:
             self.last_processed_input = ""
 
-    def set_output_to_cursor_active(self, active):
-        self.output_to_cursor_active = active
+    def process_user_input(self, user_input):
+        self.chat_history.add_entry("User", user_input)
+        self.update_chat_history.emit(self.chat_history.get_history())
+        self.last_processed_input = user_input
+
+        if self.output_to_cursor_active:
+            self.write_to_cursor.emit(user_input)
+
+        if self.send_to_ai_active:
+            response_text, cached_audio = self.assistant.process(user_input)
+            self.chat_history.add_entry("Assistant", response_text)
+            self.update_chat_history.emit(self.chat_history.get_history())
+
+            if response_text:
+                self.last_processed_response = response_text
+                if cached_audio:
+                    self.assistant.play_audio(cached_audio)
+                else:
+                    self.assistant.speak(response_text)
 
     def process_clipboard_content(self, content):
         print(f"Processing clipboard content: {content}")  # Debug print
@@ -238,34 +247,12 @@ class AssistantThread(QThread):
         else:
             print("Clipboard monitoring is not active")  # Debug print
 
-    def process_user_input(self, user_input):
-        self.chat_history.add_entry("User", user_input)
-        self.update_chat_history.emit(self.chat_history.get_history())
-        self.last_processed_input = user_input
-
-        if self.output_to_cursor_active:
-            self.write_to_cursor.emit(
-                user_input
-            )  # Emit signal instead of directly writing
-
-        if self.send_to_ai_active:
-
-            def process_and_speak():
-                response_text, cached_audio = self.assistant.process(user_input)
-                self.chat_history.add_entry("Assistant", response_text)
-                self.update_chat_history.emit(self.chat_history.get_history())
-
-                if response_text:
-                    self.last_processed_response = response_text
-                    if cached_audio:
-                        self.assistant.play_audio(cached_audio)
-                    else:
-                        self.assistant.speak(response_text)
-
-            if self.multi_threaded:
-                threading.Thread(target=process_and_speak).start()
-            else:
-                process_and_speak()
+    def set_monitor_clipboard_active(self, active):
+        self.monitor_clipboard = active
+        if active:
+            self.clipboard_thread.start()
+        else:
+            self.clipboard_thread.stop()
 
 
 def create_new_chat(va_name):
@@ -278,7 +265,6 @@ def create_new_chat(va_name):
     elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
     deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
-    # Ensure settings is accessible here (you might need to make it global or pass it as an argument)
     openai_settings = settings["openai"]
     elevenlabs_settings = settings["elevenlabs"]
 
@@ -290,11 +276,20 @@ def create_new_chat(va_name):
         elevenlabs_settings,
     )
 
-    assistants.append(assistant)
+    assistant_manager = AssistantManager(
+        assistant, log_file_path, va_name, settings["user"]["username"]
+    )
+    assistant_manager.update_chat_history.connect(chat_window.update_chat_history)
+    assistant_manager.write_to_cursor.connect(lambda text: pyautogui.write(text))
+
+    chat_window.send_message.connect(assistant_manager.process_user_input)
+    assistant_manager.set_chat_window(chat_window)
+
+    return assistant_manager
 
 
 def main():
-    global main_window, assistants, settings  # Add settings to global variables
+    global main_window, assistant_managers, settings
     parser = argparse.ArgumentParser(
         description="Run the AI assistant with custom settings."
     )
@@ -317,42 +312,29 @@ def main():
     data_dir = os.path.join(os.getcwd(), "data")
     os.makedirs(data_dir, exist_ok=True)
 
-    # Use VA name and username from settings for log file and audio cache
-    va_name = settings.get("va_name", "default")
-    username = settings["user"]["username"]
-    log_file_path = os.path.join(data_dir, f"chat_history_{va_name}_{username}.json")
-    audio_cache_dir = os.path.join(data_dir, "audio_cache", va_name, username)
-    os.makedirs(audio_cache_dir, exist_ok=True)
-
-    # Create the assistant object
-    assistant = Assistant(
-        openai_api_key,
-        elevenlabs_api_key,
-        deepgram_api_key,
-        settings["openai"],
-        settings["elevenlabs"],
-    )
-
     app = QApplication(sys.argv)
     main_window = MainWindow()
 
-    clipboard_listener = ClipboardListenerThread()
+    clipboard_listener = ClipboardListener()
 
-    assistants = []
+    assistant_managers = []
 
     main_window.show()
 
-    main_window.new_chat_window.connect(create_new_chat)
+    main_window.new_chat_window.connect(
+        lambda va_name: assistant_managers.append(create_new_chat(va_name))
+    )
     create_new_chat("VA_0")
 
     clipboard_listener.clipboard_changed.connect(
         lambda content: [
-            thread.process_clipboard_content(content) for thread in assistants
+            manager.process_clipboard_content(content) for manager in assistant_managers
         ]
     )
 
-    clipboard_listener.start()
-    app.aboutToQuit.connect(clipboard_listener.stop)
+    app.aboutToQuit.connect(
+        lambda: [manager.clipboard_thread.stop() for manager in assistant_managers]
+    )
     logging.debug("Starting Qt event loop")
     sys.exit(app.exec())
 

@@ -25,6 +25,8 @@ import os
 
 class ChatWindow(QWidget):
     send_message = pyqtSignal(str)
+    output_to_cursor_toggled = pyqtSignal(bool)
+    monitor_clipboard_toggled = pyqtSignal(bool)  # New signal
 
     def __init__(self, va_name, log_file_path):
         super().__init__()
@@ -134,11 +136,26 @@ class ChatWindow(QWidget):
         # Connect signals
         self.send_button.clicked.connect(self.send_message_action)
         self.input_field.returnPressed.connect(self.send_message_action)
+        self.output_cursor_toggle.toggled.connect(self.on_output_cursor_toggled)
+        self.monitor_clipboard_toggle.toggled.connect(self.on_monitor_clipboard_toggled)
+        self.send_ai_toggle.toggled.connect(self.on_send_ai_toggled)
+
+    def on_output_cursor_toggled(self, checked):
+        self.output_to_cursor_toggled.emit(checked)
+
+    def on_monitor_clipboard_toggled(self, checked):
+        self.monitor_clipboard_toggled.emit(checked)
+
+    def on_send_ai_toggled(self, checked):
+        # You can add any specific functionality here if needed
+        pass
 
     def send_message_action(self):
         message = self.input_field.text().strip()
         if message:
             self.send_message.emit(message)
+            if self.output_cursor_toggle.isChecked():
+                pyautogui.write(message)
             self.input_field.clear()
 
     def update_chat_history(self, history):
