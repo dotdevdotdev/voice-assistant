@@ -102,7 +102,6 @@ class Assistant:
             dev_info = self.pyaudio.get_device_info_by_index(i)
             if dev_info["maxOutputChannels"] > 0:
                 self.logger.info(f"  Device {i}: {dev_info['name']}")
-        self.pyaudio.terminate()
 
     def listen(self):
         recognizer = sr.Recognizer()

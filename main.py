@@ -181,6 +181,11 @@ def main():
     app.aboutToQuit.connect(
         lambda: [manager.clipboard_thread.stop() for manager in assistant_managers]
     )
+    app.aboutToQuit.connect(
+        lambda: [
+            manager.assistant.pyaudio.terminate() for manager in assistant_managers
+        ]
+    )
 
     sys.exit(app.exec())
 
