@@ -23,7 +23,7 @@ async def transcribe_audio(audio_data):
         )
         return response["results"]["channels"][0]["alternatives"][0]["transcript"]
     except Exception as e:
-        print(f"Error transcribing with Deepgram: {str(e)}")
+        logging.error(f"Error transcribing with Deepgram: {str(e)}")
 
         # Fallback to Google Speech Recognition
         recognizer = sr.Recognizer()

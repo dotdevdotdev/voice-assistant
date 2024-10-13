@@ -149,12 +149,12 @@ class ChatWindow(QWidget):
 
     def on_send_ai_toggled(self, checked):
         self.send_ai_toggled.emit(checked)
-        print(f"Send to AI toggled: {checked}")  # Debug print
+        logging.info(f"Send to AI toggled: {checked}")
 
     def send_message_action(self):
         message = self.input_field.text().strip()
         if message:
-            print(f"Sending message: {message}")  # Debug print
+            logging.info(f"Sending message: {message}")
             self.send_message.emit(message)
             self.input_field.clear()
 

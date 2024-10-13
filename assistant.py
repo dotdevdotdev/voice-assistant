@@ -68,6 +68,11 @@ class Assistant:
         self.realtime_mode = realtime_mode
         self.device_found = False
 
+        p = pyaudio.PyAudio()
+        self.pyaudio = p
+        self.input_device_index = self.find_input_device(p)
+        p.terminate()
+
         # Log system information
         self.log_system_info()
 
@@ -101,34 +106,28 @@ class Assistant:
                 self.logger.info(f"  Device {i}: {dev_info['name']}")
         p.terminate()
 
-    def listen(self, timeout=None):
+    def listen(self):
         recognizer = sr.Recognizer()
 
-        # Set up PyAudio with a specific device index
-        p = pyaudio.PyAudio()
-        device_index = self.find_input_device(p)
-        p.terminate()
-
-        with sr.Microphone(device_index=device_index) as source:
-            print("Listening...")
+        with sr.Microphone(device_index=self.input_device_index) as source:
+            self.logger.debug("Adjusting for ambient noise")
             recognizer.adjust_for_ambient_noise(source, duration=1)
             try:
-                print("Waiting for speech...")
+                self.logger.info("Listening...")
                 audio = recognizer.listen(source, timeout=10, phrase_time_limit=5)
+                if audio:
+                    text = self.transcribe(audio)
+                    if text:
+                        self.logger.info(f"You said: {text}")
+                        return text
 
-                print("Speech detected, transcribing...")
-                text = self.transcribe_with_deepgram(audio)
-                if text:
-                    print(f"Transcribed: {text}")
-                    return text
-                else:
-                    print("No speech detected")
-                    return None
+                self.logger.info("No speech detected")
+                return None
             except sr.WaitTimeoutError:
-                print("Listening timed out - no speech detected")
+                self.logger.debug("Listening timed out - no speech detected")
                 return None
             except Exception as e:
-                print(f"Error in listening: {e}")
+                self.logger.error(f"Error in listening: {e}")
                 return None
 
     def find_input_device(self, p, preferred_device_name="(hw:4,0)"):
@@ -136,15 +135,33 @@ class Assistant:
             for i in range(p.get_device_count()):
                 dev = p.get_device_info_by_index(i)
                 if preferred_device_name.lower() in dev["name"].lower():
-                    print(f"Found input device: {dev['name']}")
+                    self.logger.info(f"Found input device: {dev['name']}")
                     return i
 
         for i in range(p.get_device_count()):
             dev = p.get_device_info_by_index(i)
             if dev["maxInputChannels"] > 0:
-                print(f"Found input device: {dev['name']}")
+                self.logger.info(f"Found input device: {dev['name']}")
                 return i
         return None
+
+    def find_output_device(self, p, preferred_device_name="(hw:0,8)"):
+        if preferred_device_name:
+            for i in range(p.get_device_count()):
+                dev = p.get_device_info_by_index(i)
+                if preferred_device_name.lower() in dev["name"].lower():
+                    self.logger.info(f"Found output device: {dev['name']}")
+                    return i
+
+        for i in range(p.get_device_count()):
+            dev = p.get_device_info_by_index(i)
+            if dev["maxOutputChannels"] > 0:
+                self.logger.info(f"Found output device: {dev['name']}")
+                return i
+        return None
+
+    def transcribe(self, audio_data):
+        return self.transcribe_with_deepgram(audio_data)
 
     def transcribe_with_deepgram(self, audio_data):
         try:
@@ -160,7 +177,7 @@ class Assistant:
                 "buffer": audio_data.get_wav_data(),
             }
 
-            print("Sending audio to Deepgram")
+            self.logger.info("Sending audio to Deepgram")
             # Call the transcribe_file method with the audio payload and options
             response = self.deepgram.listen.prerecorded.v("1").transcribe_file(
                 payload, options
@@ -168,24 +185,23 @@ class Assistant:
 
             # Extract the transcript from the response
             transcript = response.results.channels[0].alternatives[0].transcript
-            print(f"You said: {transcript}")
             return transcript
         except Exception as e:
-            print(f"Error transcribing with Deepgram: {str(e)}")
+            self.logger.error(f"Error transcribing with Deepgram: {str(e)}")
             if "Unexpected 'content'" in str(e):
-                print(
+                self.logger.info(
                     "The audio data format is not what Deepgram expected. Make sure you're sending raw audio data."
                 )
             elif "402" in str(e):
-                print(
+                self.logger.info(
                     "Insufficient credits. Please check your Deepgram account balance."
                 )
             elif "429" in str(e):
-                print(
+                self.logger.info(
                     "Rate limit exceeded. Please try again later or implement a backoff strategy."
                 )
             else:
-                print(
+                self.logger.info(
                     "An unexpected error occurred. Please check your API key and request format."
                 )
             return "Sorry, there was an error with the speech recognition service."

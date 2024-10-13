@@ -71,11 +71,13 @@ def load_settings(settings_file=None):
                 settings.update(user_settings)
                 return settings
         except FileNotFoundError:
-            print(f"Warning: {settings_file} not found. Using default settings.")
+            logging.warning(
+                f"Warning: {settings_file} not found. Using default settings."
+            )
             return default_settings
         except yaml.YAMLError as e:
-            print(f"Error parsing {settings_file}: {e}")
-            print("Using default settings.")
+            logging.error(f"Error parsing {settings_file}: {e}")
+            logging.info("Using default settings.")
             return default_settings
     else:
         # Try to load va-settings.yaml if no custom file is specified
@@ -86,11 +88,13 @@ def load_settings(settings_file=None):
                 settings.update(user_settings)
                 return settings
         except FileNotFoundError:
-            print("Warning: va-settings.yaml not found. Using default settings.")
+            logging.warning(
+                "Warning: va-settings.yaml not found. Using default settings."
+            )
             return default_settings
         except yaml.YAMLError as e:
-            print(f"Error parsing va-settings.yaml: {e}")
-            print("Using default settings.")
+            logging.error(f"Error parsing va-settings.yaml: {e}")
+            logging.info("Using default settings.")
             return default_settings
 
 
@@ -145,7 +149,7 @@ def main():
     deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
     if not openai_api_key or not elevenlabs_api_key or not deepgram_api_key:
-        print(
+        logging.error(
             "Error: OPENAI_API_KEY, ELEVENLABS_API_KEY, and DEEPGRAM_API_KEY must be set as environment variables."
         )
         sys.exit(1)

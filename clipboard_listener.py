@@ -1,5 +1,6 @@
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 import pyperclip
+import logging
 
 
 class ClipboardListener(QObject):
@@ -8,6 +9,7 @@ class ClipboardListener(QObject):
     def __init__(self):
         super().__init__()
         self.running = True
+        self.logger = logging.getLogger(__name__)
         self.last_text = ""
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.check_clipboard)
@@ -21,7 +23,7 @@ class ClipboardListener(QObject):
                     self.last_text = text
                     self.clipboard_changed.emit(text)
             except Exception as e:
-                print(f"Error reading clipboard: {e}")
+                self.logger.error(f"Error reading clipboard: {e}")
 
     def stop(self):
         self.running = False
