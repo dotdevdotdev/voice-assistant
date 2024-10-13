@@ -181,7 +181,7 @@ def main():
     app.aboutToQuit.connect(
         lambda: [manager.clipboard_thread.stop() for manager in assistant_managers]
     )
-    logging.debug("Starting Qt event loop")
+
     sys.exit(app.exec())
 
 

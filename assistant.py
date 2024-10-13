@@ -22,7 +22,7 @@ import sounddevice as sd
 import soundfile as sf
 import platform
 import sys
-import numpy as np  # Add this line to import numpy
+import numpy as np
 
 
 class Assistant:
@@ -68,10 +68,9 @@ class Assistant:
         self.realtime_mode = realtime_mode
         self.device_found = False
 
-        p = pyaudio.PyAudio()
-        self.pyaudio = p
-        self.input_device_index = self.find_input_device(p)
-        p.terminate()
+        self.pyaudio = pyaudio.PyAudio()
+        self.input_device_index = self.find_input_device(self.pyaudio)
+        # self.pyaudio.terminate()
 
         # Log system information
         self.log_system_info()
@@ -92,26 +91,24 @@ class Assistant:
         self.logger.info(f"SoundFile version: {sf.__version__}")
 
         # Log audio devices
-        p = pyaudio.PyAudio()
         self.logger.info("Audio Input devices:")
-        for i in range(p.get_device_count()):
-            dev_info = p.get_device_info_by_index(i)
+        for i in range(self.pyaudio.get_device_count()):
+            dev_info = self.pyaudio.get_device_info_by_index(i)
             if dev_info["maxInputChannels"] > 0:
                 self.logger.info(f"  Device {i}: {dev_info['name']}")
 
         self.logger.info("Audio Output devices:")
-        for i in range(p.get_device_count()):
-            dev_info = p.get_device_info_by_index(i)
+        for i in range(self.pyaudio.get_device_count()):
+            dev_info = self.pyaudio.get_device_info_by_index(i)
             if dev_info["maxOutputChannels"] > 0:
                 self.logger.info(f"  Device {i}: {dev_info['name']}")
-        p.terminate()
+        self.pyaudio.terminate()
 
     def listen(self):
         recognizer = sr.Recognizer()
 
         with sr.Microphone(device_index=self.input_device_index) as source:
-            self.logger.debug("Adjusting for ambient noise")
-            recognizer.adjust_for_ambient_noise(source, duration=1)
+            recognizer.adjust_for_ambient_noise(source, duration=0.1)
             try:
                 self.logger.info("Listening...")
                 audio = recognizer.listen(source, timeout=10, phrase_time_limit=5)
@@ -177,7 +174,6 @@ class Assistant:
                 "buffer": audio_data.get_wav_data(),
             }
 
-            self.logger.info("Sending audio to Deepgram")
             # Call the transcribe_file method with the audio payload and options
             response = self.deepgram.listen.prerecorded.v("1").transcribe_file(
                 payload, options
@@ -185,6 +181,7 @@ class Assistant:
 
             # Extract the transcript from the response
             transcript = response.results.channels[0].alternatives[0].transcript
+
             return transcript
         except Exception as e:
             self.logger.error(f"Error transcribing with Deepgram: {str(e)}")
@@ -252,7 +249,7 @@ class Assistant:
             sound = AudioSegment.from_mp3(audio)
 
             # Add a small silence at the beginning
-            silence = AudioSegment.silent(duration=100)  # 100ms of silence
+            silence = AudioSegment.silent(duration=250)
             sound = silence + sound
 
             return sound
@@ -279,76 +276,19 @@ class Assistant:
             filepath = os.path.join(self.save_path, filename)
 
             audio_segment.export(filepath, format="wav")
-            self.logger.debug(f"Saved audio file: {filepath}")
 
-            self.logger.debug("Playing audio using sounddevice")
             data, samplerate = sf.read(filepath)
             sd.play(data, samplerate)
             sd.wait()
-            self.logger.debug("Audio playback completed")
 
-            self.logger.debug(f"Removing temporary file: {filepath}")
             os.remove(filepath)
-            self.logger.debug("Audio playback process completed successfully")
 
         except Exception as e:
             self.logger.error(f"Unexpected error in play_audio: {str(e)}")
             self.logger.exception("Stack trace:")
 
     def speak(self, text):
-        start_time = time.time()
-        self.logger.debug(f"Starting speak method for text: {text[:30]}...")
+        sound = self.generate_audio(text)
 
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.voice_id}"
-
-        headers = {
-            "Accept": "audio/mpeg",
-            "Content-Type": "application/json",
-            "xi-api-key": self.elevenlabs_api_key,
-        }
-
-        data = {
-            "text": text,
-            "model_id": self.elevenlabs_model_id,
-            "voice_settings": self.elevenlabs_voice_settings,
-        }
-
-        response = requests.post(url, json=data, headers=headers)
-
-        if response.status_code == 200:
-            self.logger.debug(
-                f"Received audio response in {time.time() - start_time:.2f} seconds"
-            )
-            audio = io.BytesIO(response.content)
-            sound = AudioSegment.from_mp3(audio)
-
-            # Add a small silence at the beginning
-            silence = AudioSegment.silent(duration=100)  # 100ms of silence
-            sound = silence + sound
-
-            self.logger.debug("Starting audio playback")
-            playback_start = time.time()
+        if sound:
             self.play_audio(sound)
-            self.logger.debug(
-                f"Audio playback completed in {time.time() - playback_start:.2f} seconds"
-            )
-        else:
-            self.logger.error(
-                f"Error: Unable to generate speech. Status code: {response.status_code}"
-            )
-            self.logger.error(f"Response content: {response.content}")
-
-    def play_audio_alternative(self, filepath):
-        try:
-            self.logger.debug(f"Loading audio file: {filepath}")
-            data, samplerate = sf.read(filepath)
-
-            self.logger.debug(
-                f"Playing audio. Shape: {data.shape}, Sample rate: {samplerate}"
-            )
-            sd.play(data, samplerate)
-            sd.wait()
-            self.logger.debug("Audio playback completed")
-        except Exception as e:
-            self.logger.error(f"Error playing audio: {str(e)}")
-            self.logger.exception("Stack trace:")

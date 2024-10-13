@@ -79,7 +79,6 @@ class AssistantManager(QObject):
             try:
                 voice_input = self.assistant.listen()
                 if voice_input:
-                    self.logger.debug(f"Voice input received: {voice_input}")
                     self.process_user_input(voice_input)
             except Exception as e:
                 self.logger.error(f"Error in voice listening: {e}")
@@ -90,7 +89,6 @@ class AssistantManager(QObject):
         self.logger.info(f"Output to cursor active: {active}")
 
     def process_user_input(self, user_input):
-        self.logger.info(f"Processing user input: {user_input}")
         self.chat_history.add_entry("User", user_input)
         self.update_chat_history.emit(self.chat_history.get_history())
         self.last_processed_input = user_input
