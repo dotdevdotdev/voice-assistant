@@ -248,7 +248,7 @@ class Assistant:
             sound = AudioSegment.from_mp3(audio)
 
             # Add a small silence at the beginning
-            silence = AudioSegment.silent(duration=250)
+            silence = AudioSegment.silent(duration=350)
             sound = silence + sound
 
             return sound
