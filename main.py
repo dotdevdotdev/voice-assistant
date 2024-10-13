@@ -12,6 +12,11 @@ import argparse
 import pyperclip
 import datetime
 import json
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
 def load_default_settings():
@@ -158,7 +163,7 @@ class AIChatHistory:
 
 class AssistantThread(QThread):
     update_chat_history = pyqtSignal(str)
-    write_to_cursor = pyqtSignal(str)  # New signal for writing to cursor
+    write_to_cursor = pyqtSignal(str)
 
     def __init__(self, assistant, log_file_path, va_name, username):
         super().__init__()
@@ -171,6 +176,11 @@ class AssistantThread(QThread):
         self.multi_threaded = False
         self.monitor_clipboard = False
         self.chat_history = AIChatHistory(log_file_path, va_name, username)
+
+        # Emit the initial chat history
+        initial_history = self.chat_history.get_history()
+        logging.debug(f"Initial chat history: {initial_history}")
+        self.update_chat_history.emit(initial_history)
 
     def set_chat_window(self, chat_window):
         self.chat_window = chat_window
@@ -258,7 +268,33 @@ class AssistantThread(QThread):
                 process_and_speak()
 
 
+def create_new_chat(va_name):
+    log_file_path = os.path.join(os.getcwd(), "data", f"chat_history_{va_name}.json")
+    chat_window = ChatWindow(va_name, log_file_path)
+    main_window.add_chat_window(chat_window)
+
+    # Get the necessary API keys and settings
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+    deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+
+    # Ensure settings is accessible here (you might need to make it global or pass it as an argument)
+    openai_settings = settings["openai"]
+    elevenlabs_settings = settings["elevenlabs"]
+
+    assistant = Assistant(
+        openai_api_key,
+        elevenlabs_api_key,
+        deepgram_api_key,
+        openai_settings,
+        elevenlabs_settings,
+    )
+
+    assistants.append(assistant)
+
+
 def main():
+    global main_window, assistants, settings  # Add settings to global variables
     parser = argparse.ArgumentParser(
         description="Run the AI assistant with custom settings."
     )
@@ -266,9 +302,6 @@ def main():
     args = parser.parse_args()
 
     settings = load_settings(args.settings)
-
-    app = QApplication(sys.argv)
-    main_window = MainWindow()
 
     openai_api_key = os.getenv("OPENAI_API_KEY")
     elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
@@ -291,6 +324,7 @@ def main():
     audio_cache_dir = os.path.join(data_dir, "audio_cache", va_name, username)
     os.makedirs(audio_cache_dir, exist_ok=True)
 
+    # Create the assistant object
     assistant = Assistant(
         openai_api_key,
         elevenlabs_api_key,
@@ -298,51 +332,31 @@ def main():
         settings["openai"],
         settings["elevenlabs"],
     )
+
+    app = QApplication(sys.argv)
+    main_window = MainWindow()
+
     clipboard_listener = ClipboardListenerThread()
+
+    assistants = []
+
+    main_window.show()
+
+    main_window.new_chat_window.connect(create_new_chat)
+    create_new_chat("VA_0")
 
     clipboard_listener.clipboard_changed.connect(
         lambda content: [
-            thread.process_clipboard_content(content) for thread in assistant_threads
+            thread.process_clipboard_content(content) for thread in assistants
         ]
     )
 
-    assistant_threads = []
-
-    def create_new_chat(va_name):
-        chat_window = ChatWindow(va_name)
-        assistant_thread = AssistantThread(assistant, log_file_path, va_name, username)
-        assistant_thread.set_chat_window(chat_window)
-
-        chat_window.send_message.connect(assistant_thread.process_user_input)
-        chat_window.send_ai_toggle.clicked.connect(
-            assistant_thread.set_send_to_ai_active
-        )
-        chat_window.output_cursor_toggle.clicked.connect(
-            assistant_thread.set_output_to_cursor_active
-        )
-        chat_window.monitor_clipboard_toggle.clicked.connect(
-            lambda checked: setattr(assistant_thread, "monitor_clipboard", checked)
-        )
-
-        assistant_thread.update_chat_history.connect(chat_window.update_chat_history)
-        assistant_thread.write_to_cursor.connect(
-            lambda text: pyautogui.write(text)
-        )  # Connect new signal
-
-        assistant_thread.start()
-        main_window.add_chat_window(chat_window)
-        assistant_threads.append(assistant_thread)
-
-    main_window.new_chat_window.connect(create_new_chat)
-
-    # Create an initial chat window
-    create_new_chat("VA_0")
-
-    main_window.show()
     clipboard_listener.start()
     app.aboutToQuit.connect(clipboard_listener.stop)
+    logging.debug("Starting Qt event loop")
     sys.exit(app.exec())
 
 
 if __name__ == "__main__":
+    logging.debug("Starting main function")
     main()

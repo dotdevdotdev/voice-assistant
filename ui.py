@@ -10,181 +10,262 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QStyle,
     QScrollArea,
+    QFrame,
+    QSizePolicy,
+    QLineEdit,
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QFont, QIcon, QColor, QPalette
 import pyperclip
 import pyautogui
+import logging
+import json
+import os
 
 
 class ChatWindow(QWidget):
     send_message = pyqtSignal(str)
 
-    def __init__(self, va_name):
+    def __init__(self, va_name, log_file_path):
         super().__init__()
         self.va_name = va_name
-        self.setup_ui()
+        self.log_file_path = log_file_path
+        self.init_ui()
+        self.load_chat_history()
 
-    def setup_ui(self):
+    def init_ui(self):
         layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
 
-        # Set the background color to black
-        self.setAutoFillBackground(True)
-        palette = self.palette()
-        palette.setColor(QPalette.ColorRole.Window, QColor("#000000"))
-        self.setPalette(palette)
-
-        # Chat area
-        self.chat_area = QScrollArea()
-        self.chat_area.setStyleSheet(
-            "background-color: #000000; border: 1px solid #39FF14;"
-        )
-        self.chat_widget = QWidget()
-        self.chat_layout = QVBoxLayout(self.chat_widget)
-        self.chat_area.setWidget(self.chat_widget)
-        self.chat_area.setWidgetResizable(True)
-        layout.addWidget(self.chat_area)
+        # Chat history area
+        self.chat_history = QTextEdit()
+        self.chat_history.setReadOnly(True)
+        self.chat_history.setStyleSheet("""
+            QTextEdit {
+                background-color: #000000;
+                color: #39FF14;
+                border: none;
+                border-radius: 15px;
+                padding: 15px;
+                font-family: 'Courier New', monospace;
+                font-size: 14px;
+            }
+        """)
+        layout.addWidget(self.chat_history)
 
         # Input area
         input_layout = QHBoxLayout()
-        self.message_input = QTextEdit()
-        self.message_input.setFixedHeight(50)
-        self.message_input.setStyleSheet(
-            "background-color: #000000; color: #39FF14; border: 1px solid #39FF14;"
-        )
+        input_layout.setSpacing(15)
+        self.input_field = QLineEdit()
+        self.input_field.setPlaceholderText("Type your message here...")
+        self.input_field.setStyleSheet("""
+            QLineEdit {
+                background-color: #000000;
+                color: #39FF14;
+                border: 2px solid #39FF14;
+                border-radius: 20px;
+                padding: 10px 15px;
+                font-family: 'Courier New', monospace;
+                font-size: 14px;
+            }
+        """)
         self.send_button = QPushButton("Send")
-        self.send_button.setStyleSheet(
-            "background-color: #000000; color: #39FF14; border: 1px solid #39FF14;"
-        )
-        self.send_button.clicked.connect(self.send_message_clicked)
-        input_layout.addWidget(self.message_input)
+        self.send_button.setStyleSheet("""
+            QPushButton {
+                background-color: #000000;
+                color: #39FF14;
+                border: 2px solid #39FF14;
+                border-radius: 20px;
+                padding: 10px 20px;
+                font-family: 'Courier New', monospace;
+                font-size: 14px;
+                min-width: 100px;
+            }
+            QPushButton:hover {
+                background-color: #39FF14;
+                color: #000000;
+            }
+        """)
+        input_layout.addWidget(self.input_field)
         input_layout.addWidget(self.send_button)
         layout.addLayout(input_layout)
 
-        # Control buttons
-        control_layout = QHBoxLayout()
+        # Toolbar
+        toolbar_layout = QHBoxLayout()
+        toolbar_layout.setSpacing(15)
         self.send_ai_toggle = QPushButton("Send to AI")
-        self.send_ai_toggle.setCheckable(True)
         self.output_cursor_toggle = QPushButton("Output to Cursor")
-        self.output_cursor_toggle.setCheckable(True)
         self.monitor_clipboard_toggle = QPushButton("Monitor Clipboard")
-        self.monitor_clipboard_toggle.setCheckable(True)
 
         for button in [
             self.send_ai_toggle,
             self.output_cursor_toggle,
             self.monitor_clipboard_toggle,
         ]:
+            button.setCheckable(True)
             button.setStyleSheet("""
                 QPushButton {
                     background-color: #000000;
                     color: #39FF14;
-                    border: 1px solid #39FF14;
+                    border: 2px solid #39FF14;
+                    border-radius: 20px;
+                    padding: 10px 15px;
+                    font-family: 'Courier New', monospace;
+                    font-size: 14px;
+                    min-width: 150px;
                 }
                 QPushButton:checked {
                     background-color: #39FF14;
                     color: #000000;
                 }
+                QPushButton:hover {
+                    background-color: #1E90FF;
+                    color: #000000;
+                    border-color: #1E90FF;
+                }
             """)
+            toolbar_layout.addWidget(button)
 
-        control_layout.addWidget(self.send_ai_toggle)
-        control_layout.addWidget(self.output_cursor_toggle)
-        control_layout.addWidget(self.monitor_clipboard_toggle)
-        layout.addLayout(control_layout)
+        layout.addLayout(toolbar_layout)
 
         self.setLayout(layout)
 
-    def send_message_clicked(self):
-        message = self.message_input.toPlainText()
+        # Connect signals
+        self.send_button.clicked.connect(self.send_message_action)
+        self.input_field.returnPressed.connect(self.send_message_action)
+
+    def send_message_action(self):
+        message = self.input_field.text().strip()
         if message:
             self.send_message.emit(message)
-            self.message_input.clear()
-            self.add_message(message, is_user=True)
-
-    def add_message(self, message, is_user=False):
-        message_widget = QLabel(message)
-        message_widget.setWordWrap(True)
-
-        if is_user:
-            message_widget.setStyleSheet(
-                "background-color: #000000; color: #39FF14; border: 1px solid #39FF14; border-radius: 10px; padding: 10px; margin: 5px;"
-            )
-            message_widget.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        else:
-            message_widget.setStyleSheet(
-                "background-color: #000000; color: #00BFFF; border: 1px solid #00BFFF; border-radius: 10px; padding: 10px; margin: 5px;"
-            )
-            message_widget.setAlignment(Qt.AlignmentFlag.AlignRight)
-
-        self.chat_layout.addWidget(message_widget)
-
-        # Ensure the latest message is visible
-        self.chat_area.verticalScrollBar().setValue(
-            self.chat_area.verticalScrollBar().maximum()
-        )
+            self.input_field.clear()
 
     def update_chat_history(self, history):
-        # Clear existing messages
-        for i in reversed(range(self.chat_layout.count())):
-            self.chat_layout.itemAt(i).widget().setParent(None)
+        logging.debug(f"Updating chat history for {self.va_name}")
+        logging.debug(f"Received history: {history}")
+        self.chat_history.clear()
+        messages = history.split("\n")
+        for message in messages:
+            if "User" in message:
+                self.add_message(message, align_right=True)
+            elif "Assistant" in message:
+                self.add_message(message, align_right=False)
+            else:
+                self.chat_history.append(message)
 
-        # Add new messages
-        for entry in history.split("\n"):
-            parts = entry.split(" - ", 1)
-            if len(parts) == 2:
-                metadata, content = parts
-                is_user = "User" in metadata
-                self.add_message(content, is_user)
+        # Scroll to the bottom of the chat history
+        scrollbar = self.chat_history.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+        logging.debug("Chat history updated and scrolled to bottom")
 
-        # Scroll to the bottom
-        self.chat_area.verticalScrollBar().setValue(
-            self.chat_area.verticalScrollBar().maximum()
-        )
+    def add_message(self, message, align_right=False):
+        cursor = self.chat_history.textCursor()
+        block_format = cursor.blockFormat()
+        if align_right:
+            block_format.setAlignment(Qt.AlignmentFlag.AlignRight)
+        else:
+            block_format.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        cursor.setBlockFormat(block_format)
+
+        frame_color = "#39FF14" if align_right else "#1E90FF"
+        frame_html = f"""
+        <div style="
+            background-color: {frame_color};
+            color: #000000;
+            border-radius: 15px;
+            padding: 10px;
+            margin: {'5px 0 5px auto' if align_right else '5px auto 5px 0'};
+            display: inline-block;
+            max-width: 70%;
+        ">
+            {message}
+        </div>
+        """
+
+        cursor.insertHtml(frame_html)
+        cursor.insertBlock()
+        self.chat_history.setTextCursor(cursor)
+
+    def load_chat_history(self):
+        if os.path.exists(self.log_file_path):
+            with open(self.log_file_path, "r") as f:
+                history = json.load(f)
+            self.update_chat_history(
+                "\n".join([f"{entry['type']}: {entry['content']}" for entry in history])
+            )
 
 
 class MainWindow(QMainWindow):
-    new_chat_window = pyqtSignal(str)
+    new_chat_window = pyqtSignal(str, str)  # Add log_file_path to the signal
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Multi-Chat AI Assistant")
+        self.chat_windows = []
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("AI Assistant")
         self.setGeometry(100, 100, 800, 600)
-        self.setup_ui()
 
-    def setup_ui(self):
         central_widget = QWidget()
-        main_layout = QVBoxLayout(central_widget)
+        self.setCentralWidget(central_widget)
+        central_widget.setStyleSheet("""
+            background-color: #000000;
+            color: #39FF14;
+            font-family: 'Courier New', monospace;
+        """)
 
-        # Set the background color to black
-        central_widget.setAutoFillBackground(True)
-        palette = central_widget.palette()
-        palette.setColor(QPalette.ColorRole.Window, QColor("#000000"))
-        central_widget.setPalette(palette)
-
-        # Chat windows area
-        self.chat_area = QScrollArea()
-        self.chat_area.setStyleSheet(
-            "background-color: #000000; border: 1px solid #39FF14;"
-        )
-        self.chat_widget = QWidget()
-        self.chat_layout = QHBoxLayout(self.chat_widget)
-        self.chat_area.setWidget(self.chat_widget)
-        self.chat_area.setWidgetResizable(True)
-        main_layout.addWidget(self.chat_area)
+        layout = QVBoxLayout(central_widget)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
 
         # New chat button
         new_chat_button = QPushButton("New Chat")
-        new_chat_button.setStyleSheet(
-            "background-color: #000000; color: #39FF14; border: 1px solid #39FF14;"
-        )
         new_chat_button.clicked.connect(self.create_new_chat)
-        main_layout.addWidget(new_chat_button)
+        new_chat_button.setStyleSheet("""
+            QPushButton {
+                background-color: #000000;
+                color: #39FF14;
+                border: 2px solid #39FF14;
+                border-radius: 20px;
+                padding: 10px 20px;
+                font-family: 'Courier New', monospace;
+                font-size: 16px;
+                min-width: 150px;
+            }
+            QPushButton:hover {
+                background-color: #39FF14;
+                color: #000000;
+            }
+        """)
+        layout.addWidget(new_chat_button, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        self.setCentralWidget(central_widget)
+        # Scroll area for chat windows
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: #000000;
+            }
+        """)
+        layout.addWidget(scroll_area)
+
+        self.chat_container = QWidget()
+        self.chat_layout = QVBoxLayout(self.chat_container)
+        self.chat_layout.setContentsMargins(0, 0, 0, 0)
+        self.chat_layout.setSpacing(20)
+        scroll_area.setWidget(self.chat_container)
 
     def create_new_chat(self):
-        va_name = f"VA_{len(self.chat_layout)}"  # Simple naming scheme
-        self.new_chat_window.emit(va_name)
+        va_name = f"VA_{len(self.chat_windows)}"
+        log_file_path = os.path.join(
+            os.getcwd(), "data", f"chat_history_{va_name}.json"
+        )
+        self.new_chat_window.emit(va_name, log_file_path)
 
     def add_chat_window(self, chat_window):
+        self.chat_windows.append(chat_window)
         self.chat_layout.addWidget(chat_window)
