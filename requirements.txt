@@ -2,8 +2,11 @@ PyQt6
 openai
 SpeechRecognition
 pyttsx3
-pyaudio
+pyaudio==0.2.14
 elevenlabs
-pydub
+pydub==0.25.1
 flask
 openai>=0.27.0
+sounddevice==0.4.6
+soundfile==0.12.1
+numpy

@@ -6,6 +6,7 @@ import io
 import os
 from pydub import AudioSegment
 from pydub.playback import play as pydub_play
+import pydub  # Add this line to import pydub module
 from deepgram import (
     DeepgramClient,
     PrerecordedOptions,
@@ -17,6 +18,11 @@ import wave
 import json
 import hashlib
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
+import sounddevice as sd
+import soundfile as sf
+import platform
+import sys
+import numpy as np  # Add this line to import numpy
 
 
 class Assistant:
@@ -67,6 +73,32 @@ class Assistant:
         os.makedirs(self.cache_dir, exist_ok=True)
         self.cache_metadata_file = os.path.join(self.cache_dir, "metadata.json")
         self.load_cache_metadata()
+
+        # Log system information
+        self.log_system_info()
+
+    def log_system_info(self):
+        self.logger.info(f"Python version: {sys.version}")
+        self.logger.info(f"Platform: {platform.platform()}")
+        self.logger.info(f"PyAudio version: {pyaudio.__version__}")
+
+        # Handle pydub version
+        try:
+            pydub_version = pydub.__version__
+        except AttributeError:
+            pydub_version = "Unknown"
+        self.logger.info(f"Pydub version: {pydub_version}")
+
+        self.logger.info(f"Sounddevice version: {sd.__version__}")
+        self.logger.info(f"SoundFile version: {sf.__version__}")
+
+        # Log audio devices
+        p = pyaudio.PyAudio()
+        self.logger.info("Audio devices:")
+        for i in range(p.get_device_count()):
+            dev_info = p.get_device_info_by_index(i)
+            self.logger.info(f"  Device {i}: {dev_info['name']}")
+        p.terminate()
 
     def load_cache_metadata(self):
         if os.path.exists(self.cache_metadata_file):
@@ -229,54 +261,36 @@ class Assistant:
             return None
 
     def play_audio(self, audio_data):
-        if isinstance(audio_data, str):
-            # If audio_data is a string, assume it's a file path
-            audio_segment = AudioSegment.from_wav(audio_data)
-        elif isinstance(audio_data, AudioSegment):
-            audio_segment = audio_data
-        else:
-            raise ValueError("Invalid audio_data type. Expected str or AudioSegment.")
+        try:
+            if isinstance(audio_data, str):
+                audio_segment = AudioSegment.from_wav(audio_data)
+            elif isinstance(audio_data, AudioSegment):
+                audio_segment = audio_data
+            else:
+                raise ValueError(
+                    "Invalid audio_data type. Expected str or AudioSegment."
+                )
 
-        # Generate a unique filename using timestamp
-        timestamp = int(time.time())
-        filename = f"audio_{timestamp}.wav"
-        filepath = os.path.join(self.save_path, filename)
+            timestamp = int(time.time())
+            filename = f"audio_{timestamp}.wav"
+            filepath = os.path.join(self.save_path, filename)
 
-        # Export the audio segment to a temporary WAV file
-        audio_segment.export(filepath, format="wav")
-        self.logger.debug(f"Saved audio file: {filepath}")
+            audio_segment.export(filepath, format="wav")
+            self.logger.debug(f"Saved audio file: {filepath}")
 
-        # Open the WAV file
-        wf = wave.open(filepath, "rb")
+            self.logger.debug("Playing audio using sounddevice")
+            data, samplerate = sf.read(filepath)
+            sd.play(data, samplerate)
+            sd.wait()
+            self.logger.debug("Audio playback completed")
 
-        # Initialize PyAudio
-        p = pyaudio.PyAudio()
+            self.logger.debug(f"Removing temporary file: {filepath}")
+            os.remove(filepath)
+            self.logger.debug("Audio playback process completed successfully")
 
-        # Open stream
-        stream = p.open(
-            format=p.get_format_from_width(wf.getsampwidth()),
-            channels=wf.getnchannels(),
-            rate=wf.getframerate(),
-            output=True,
-        )
-
-        # Read data
-        data = wf.readframes(1024)
-
-        # Play stream
-        while len(data) > 0:
-            stream.write(data)
-            data = wf.readframes(1024)
-
-        # Stop stream
-        stream.stop_stream()
-        stream.close()
-
-        # Close PyAudio
-        p.terminate()
-
-        # Remove the temporary file
-        os.remove(filepath)
+        except Exception as e:
+            self.logger.error(f"Unexpected error in play_audio: {str(e)}")
+            self.logger.exception("Stack trace:")
 
     def speak(self, text):
         start_time = time.time()
@@ -337,3 +351,18 @@ class Assistant:
                 f"Error: Unable to generate speech. Status code: {response.status_code}"
             )
             self.logger.error(f"Response content: {response.content}")
+
+    def play_audio_alternative(self, filepath):
+        try:
+            self.logger.debug(f"Loading audio file: {filepath}")
+            data, samplerate = sf.read(filepath)
+
+            self.logger.debug(
+                f"Playing audio. Shape: {data.shape}, Sample rate: {samplerate}"
+            )
+            sd.play(data, samplerate)
+            sd.wait()
+            self.logger.debug("Audio playback completed")
+        except Exception as e:
+            self.logger.error(f"Error playing audio: {str(e)}")
+            self.logger.exception("Stack trace:")
