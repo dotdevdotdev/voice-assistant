@@ -1,14 +1,13 @@
 import speech_recognition as sr
 from deepgram import Deepgram
 import asyncio
-
-# ... (existing imports and setup)
+import os
 
 
 async def transcribe_audio(audio_data):
     try:
         # Attempt to transcribe with Deepgram
-        dg_client = Deepgram(DEEPGRAM_API_KEY)
+        dg_client = Deepgram(os.getenv("DEEPGRAM_API_KEY"))
 
         # Convert AudioData to bytes
         audio_bytes = audio_data.get_raw_data()

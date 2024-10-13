@@ -68,12 +68,6 @@ class Assistant:
         self.realtime_mode = realtime_mode
         self.device_found = False
 
-        # Set up cache directory and metadata file
-        self.cache_dir = os.path.join(self.save_path, "audio_cache")
-        os.makedirs(self.cache_dir, exist_ok=True)
-        self.cache_metadata_file = os.path.join(self.cache_dir, "metadata.json")
-        self.load_cache_metadata()
-
         # Log system information
         self.log_system_info()
 
@@ -94,49 +88,18 @@ class Assistant:
 
         # Log audio devices
         p = pyaudio.PyAudio()
-        self.logger.info("Audio devices:")
+        self.logger.info("Audio Input devices:")
         for i in range(p.get_device_count()):
             dev_info = p.get_device_info_by_index(i)
-            self.logger.info(f"  Device {i}: {dev_info['name']}")
+            if dev_info["maxInputChannels"] > 0:
+                self.logger.info(f"  Device {i}: {dev_info['name']}")
+
+        self.logger.info("Audio Output devices:")
+        for i in range(p.get_device_count()):
+            dev_info = p.get_device_info_by_index(i)
+            if dev_info["maxOutputChannels"] > 0:
+                self.logger.info(f"  Device {i}: {dev_info['name']}")
         p.terminate()
-
-    def load_cache_metadata(self):
-        if os.path.exists(self.cache_metadata_file):
-            with open(self.cache_metadata_file, "r") as f:
-                self.cache_metadata = json.load(f)
-        else:
-            self.cache_metadata = {}
-
-    def save_cache_metadata(self):
-        with open(self.cache_metadata_file, "w") as f:
-            json.dump(self.cache_metadata, f, indent=2)
-
-    def get_cache_key(self, prompt):
-        return hashlib.md5(prompt.encode()).hexdigest()
-
-    def get_cached_response(self, prompt):
-        cache_key = self.get_cache_key(prompt)
-        if cache_key in self.cache_metadata:
-            audio_path = os.path.join(self.cache_dir, f"{cache_key}.wav")
-            if os.path.exists(audio_path):
-                self.logger.debug(f"Using cached response for prompt: {prompt[:30]}...")
-                return self.cache_metadata[cache_key][
-                    "response_text"
-                ], AudioSegment.from_wav(audio_path)
-        return None, None
-
-    def cache_response(self, prompt, response_text, audio_segment):
-        cache_key = self.get_cache_key(prompt)
-        audio_path = os.path.join(self.cache_dir, f"{cache_key}.wav")
-        audio_segment.export(audio_path, format="wav")
-        self.cache_metadata[cache_key] = {
-            "prompt": prompt,
-            "response_text": response_text,
-            "timestamp": int(time.time()),
-            "file_path": audio_path,
-        }
-        self.save_cache_metadata()
-        self.logger.debug(f"Cached response for prompt: {prompt[:30]}...")
 
     def listen(self, timeout=None):
         recognizer = sr.Recognizer()
@@ -168,7 +131,14 @@ class Assistant:
                 print(f"Error in listening: {e}")
                 return None
 
-    def find_input_device(self, p):
+    def find_input_device(self, p, preferred_device_name="(hw:4,0)"):
+        if preferred_device_name:
+            for i in range(p.get_device_count()):
+                dev = p.get_device_info_by_index(i)
+                if preferred_device_name.lower() in dev["name"].lower():
+                    print(f"Found input device: {dev['name']}")
+                    return i
+
         for i in range(p.get_device_count()):
             dev = p.get_device_info_by_index(i)
             if dev["maxInputChannels"] > 0:
@@ -186,10 +156,11 @@ class Assistant:
             )
 
             # Prepare the audio payload
-            payload: FileSource = {
-                "buffer": audio_data,
+            payload = {
+                "buffer": audio_data.get_wav_data(),
             }
 
+            print("Sending audio to Deepgram")
             # Call the transcribe_file method with the audio payload and options
             response = self.deepgram.listen.prerecorded.v("1").transcribe_file(
                 payload, options
@@ -201,29 +172,45 @@ class Assistant:
             return transcript
         except Exception as e:
             print(f"Error transcribing with Deepgram: {str(e)}")
+            if "Unexpected 'content'" in str(e):
+                print(
+                    "The audio data format is not what Deepgram expected. Make sure you're sending raw audio data."
+                )
+            elif "402" in str(e):
+                print(
+                    "Insufficient credits. Please check your Deepgram account balance."
+                )
+            elif "429" in str(e):
+                print(
+                    "Rate limit exceeded. Please try again later or implement a backoff strategy."
+                )
+            else:
+                print(
+                    "An unexpected error occurred. Please check your API key and request format."
+                )
             return "Sorry, there was an error with the speech recognition service."
 
-    def process(self, user_input):
-        cached_response, cached_audio = self.get_cached_response(user_input)
-        if cached_response:
-            self.logger.debug("Using cached response")
-            return cached_response, cached_audio
+    def process(self, user_input, chat_history):
+        # Prepare the messages for the API call
+        messages = [{"role": "system", "content": self.system_prompt}]
+
+        # Add the last few messages from the chat history for context
+        max_history = 5  # Adjust this number as needed
+        for entry in chat_history[-max_history:]:
+            role = "assistant" if entry["type"] == "Assistant" else "user"
+            messages.append({"role": role, "content": entry["content"]})
+
+        # Add the current user input
+        messages.append({"role": "user", "content": user_input})
 
         response = self.client.chat.completions.create(
             model=self.openai_model,
-            messages=[
-                {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": user_input},
-            ],
+            messages=messages,
         )
         response_text = response.choices[0].message.content
 
         # Generate audio for the response
         sound = self.generate_audio(response_text)
-
-        # Cache the response
-        if sound:
-            self.cache_response(user_input, response_text, sound)
 
         return response_text, sound
 
@@ -296,18 +283,6 @@ class Assistant:
         start_time = time.time()
         self.logger.debug(f"Starting speak method for text: {text[:30]}...")
 
-        # Check if we have a cached version of this audio
-        cached_response, cached_audio = self.get_cached_response(text)
-        if cached_audio:
-            self.logger.debug("Using cached audio")
-            self.logger.debug("Starting audio playback")
-            playback_start = time.time()
-            self.play_audio(cached_audio)
-            self.logger.debug(
-                f"Audio playback completed in {time.time() - playback_start:.2f} seconds"
-            )
-            return
-
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.voice_id}"
 
         headers = {
@@ -341,11 +316,6 @@ class Assistant:
             self.logger.debug(
                 f"Audio playback completed in {time.time() - playback_start:.2f} seconds"
             )
-
-            # Cache the response
-            self.cache_response(
-                text, text, sound
-            )  # We're using the input text as both prompt and response
         else:
             self.logger.error(
                 f"Error: Unable to generate speech. Status code: {response.status_code}"
