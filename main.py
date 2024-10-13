@@ -12,6 +12,7 @@ import pyperclip
 import datetime
 import json
 import logging
+import time  # Add this import
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -178,6 +179,7 @@ class AIChatHistory:
 class AssistantManager(QObject):
     update_chat_history = pyqtSignal(str)
     write_to_cursor = pyqtSignal(str)
+    voice_input_received = pyqtSignal(str)
 
     def __init__(self, assistant, log_file_path, va_name, username):
         super().__init__()
@@ -193,6 +195,8 @@ class AssistantManager(QObject):
         self.clipboard_listener.clipboard_changed.connect(
             self.process_clipboard_content
         )
+        self.voice_listening_active = False
+        self.voice_thread = None
 
         # Emit the initial chat history
         initial_history = self.chat_history.get_history()
@@ -204,20 +208,56 @@ class AssistantManager(QObject):
         self.chat_window.output_to_cursor_toggled.connect(
             self.set_output_to_cursor_active
         )
-        self.chat_window.send_ai_toggle.toggled.connect(self.set_send_to_ai_active)
+        self.chat_window.send_ai_toggled.connect(self.set_send_to_ai_active)
         self.chat_window.monitor_clipboard_toggled.connect(
             self.set_monitor_clipboard_active
         )
-
-    def set_output_to_cursor_active(self, active):
-        self.output_to_cursor_active = active
+        self.chat_window.send_message.connect(self.process_user_input)
+        self.voice_input_received.connect(self.process_user_input)
 
     def set_send_to_ai_active(self, active):
         self.send_to_ai_active = active
-        if not active:
-            self.last_processed_input = ""
+        print(f"Send to AI active: {active}")  # Debug print
+        if active:
+            self.start_voice_listening()
+        else:
+            self.stop_voice_listening()
+
+    def start_voice_listening(self):
+        if not self.voice_listening_active:
+            self.voice_listening_active = True
+            self.voice_thread = threading.Thread(target=self.voice_listening_loop)
+            self.voice_thread.daemon = True  # Set the thread as daemon
+            self.voice_thread.start()
+            print("Voice listening started")  # Debug print
+
+    def stop_voice_listening(self):
+        if self.voice_listening_active:
+            self.voice_listening_active = False
+            if self.voice_thread and self.voice_thread.is_alive():
+                self.voice_thread.join(timeout=5)
+            self.voice_thread = None
+            print("Voice listening stopped")  # Debug print
+
+    def voice_listening_loop(self):
+        while self.voice_listening_active:
+            try:
+                voice_input = self.assistant.listen(timeout=10)
+                if voice_input:
+                    print(f"Voice input received: {voice_input}")
+                    self.voice_input_received.emit(voice_input)
+                else:
+                    print("No voice input detected, continuing to listen...")
+            except Exception as e:
+                print(f"Error in voice listening: {e}")
+            time.sleep(0.1)  # Small delay to prevent tight looping
+
+    def set_output_to_cursor_active(self, active):
+        self.output_to_cursor_active = active
+        print(f"Output to cursor active: {active}")  # Debug print
 
     def process_user_input(self, user_input):
+        print(f"Processing user input: {user_input}")  # Debug print
         self.chat_history.add_entry("User", user_input)
         self.update_chat_history.emit(self.chat_history.get_history())
         self.last_processed_input = user_input
@@ -226,6 +266,7 @@ class AssistantManager(QObject):
             self.write_to_cursor.emit(user_input)
 
         if self.send_to_ai_active:
+            print("Sending to AI")  # Debug print
             response_text, cached_audio = self.assistant.process(user_input)
             self.chat_history.add_entry("Assistant", response_text)
             self.update_chat_history.emit(self.chat_history.get_history())
@@ -236,6 +277,8 @@ class AssistantManager(QObject):
                     self.assistant.play_audio(cached_audio)
                 else:
                     self.assistant.speak(response_text)
+        else:
+            print("Not sending to AI (inactive)")  # Debug print
 
     def process_clipboard_content(self, content):
         print(f"Processing clipboard content: {content}")  # Debug print
@@ -284,6 +327,9 @@ def create_new_chat(va_name):
 
     chat_window.send_message.connect(assistant_manager.process_user_input)
     assistant_manager.set_chat_window(chat_window)
+
+    # Start voice listening by default
+    assistant_manager.set_send_to_ai_active(True)
 
     return assistant_manager
 

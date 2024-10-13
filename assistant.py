@@ -16,6 +16,7 @@ import pyaudio
 import wave
 import json
 import hashlib
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 
 class Assistant:
@@ -105,23 +106,43 @@ class Assistant:
         self.save_cache_metadata()
         self.logger.debug(f"Cached response for prompt: {prompt[:30]}...")
 
-    async def listen(self):
-        with sr.Microphone() as source:
+    def listen(self, timeout=None):
+        recognizer = sr.Recognizer()
+
+        # Set up PyAudio with a specific device index
+        p = pyaudio.PyAudio()
+        device_index = self.find_input_device(p)
+        p.terminate()
+
+        with sr.Microphone(device_index=device_index) as source:
             print("Listening...")
-            audio = self.recognizer.listen(source)
+            recognizer.adjust_for_ambient_noise(source, duration=1)
+            try:
+                print("Waiting for speech...")
+                audio = recognizer.listen(source, timeout=10, phrase_time_limit=5)
 
-        try:
-            # Convert the audio to wav format
-            wav_data = io.BytesIO()
-            AudioSegment(data=audio.get_wav_data()).export(wav_data, format="wav")
-            wav_data.seek(0)
+                print("Speech detected, transcribing...")
+                text = self.transcribe_with_deepgram(audio)
+                if text:
+                    print(f"Transcribed: {text}")
+                    return text
+                else:
+                    print("No speech detected")
+                    return None
+            except sr.WaitTimeoutError:
+                print("Listening timed out - no speech detected")
+                return None
+            except Exception as e:
+                print(f"Error in listening: {e}")
+                return None
 
-            # Use Deepgram for transcription
-            text = self.transcribe_with_deepgram(wav_data.read())
-            return text
-        except Exception as e:
-            print(f"Error: {str(e)}")
-            return "Sorry, there was an error with the speech recognition service."
+    def find_input_device(self, p):
+        for i in range(p.get_device_count()):
+            dev = p.get_device_info_by_index(i)
+            if dev["maxInputChannels"] > 0:
+                print(f"Found input device: {dev['name']}")
+                return i
+        return None
 
     def transcribe_with_deepgram(self, audio_data):
         try:
