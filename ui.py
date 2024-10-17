@@ -45,15 +45,10 @@ class ChatWindow(QWidget):
         self.chat_history = QTextEdit()
         self.chat_history.setReadOnly(True)
         self.chat_history.setStyleSheet("""
-            QTextEdit {
-                background-color: #000000;
-                color: #39FF14;
-                border: none;
-                border-radius: 15px;
-                padding: 15px;
-                font-family: 'Courier New', monospace;
-                font-size: 14px;
-            }
+            font-family: monospace;
+            font-size: 18px;
+            font-weight: bold;
+            color: #000000;
         """)
         layout.addWidget(self.chat_history)
 
@@ -65,12 +60,13 @@ class ChatWindow(QWidget):
         self.input_field.setStyleSheet("""
             QLineEdit {
                 background-color: #000000;
-                color: #39FF14;
+                color: #FFFFFF;
                 border: 2px solid #39FF14;
                 border-radius: 20px;
                 padding: 10px 15px;
-                font-family: 'Courier New', monospace;
-                font-size: 14px;
+                font-family: monospace;
+                font-size: 18px;
+                font-weight: bold;
             }
         """)
         self.send_button = QPushButton("Send")
@@ -81,15 +77,23 @@ class ChatWindow(QWidget):
                 border: 2px solid #39FF14;
                 border-radius: 20px;
                 padding: 10px 20px;
-                font-family: 'Courier New', monospace;
-                font-size: 14px;
+                font-family: monospace;
+                font-size: 18px;
+                font-weight: bold;
                 min-width: 100px;
+                transition: background-color 0.3s ease-out, color 0.3s ease-out, transform 0.3s ease-out;
+                transform: scale(1);
+            }
+            QPushButton:checked {
+                background-color: #39FF14;
+                color: #000000;
             }
             QPushButton:hover {
                 background-color: #39FF14;
                 color: #000000;
             }
         """)
+
         input_layout.addWidget(self.input_field)
         input_layout.addWidget(self.send_button)
         layout.addLayout(input_layout)
@@ -113,23 +117,26 @@ class ChatWindow(QWidget):
                     color: #39FF14;
                     border: 2px solid #39FF14;
                     border-radius: 20px;
-                    padding: 10px 15px;
-                    font-family: 'Courier New', monospace;
-                    font-size: 14px;
-                    min-width: 150px;
+                    padding: 10px 20px;
+                    font-family: monospace;
+                    font-size: 18px;
+                    font-weight: bold;
+                    min-width: 100px;
+                    transition: background-color 0.3s ease-out, color 0.3s ease-out, transform 0.3s ease-out;
+                    transform: scale(1);
                 }
                 QPushButton:checked {
                     background-color: #39FF14;
                     color: #000000;
                 }
                 QPushButton:hover {
-                    background-color: #1E90FF;
+                    background-color: #39FF14;
                     color: #000000;
-                    border-color: #1E90FF;
                 }
             """)
             toolbar_layout.addWidget(button)
 
+        self.send_ai_toggle.setChecked(True)
         layout.addLayout(toolbar_layout)
 
         self.setLayout(layout)
@@ -165,9 +172,9 @@ class ChatWindow(QWidget):
         messages = history.split("\n")
         for message in messages:
             if "User" in message:
-                self.add_message(message, align_right=True)
+                self.add_message(message.split("User: ", 1)[1], align_right=True)
             elif "Assistant" in message:
-                self.add_message(message, align_right=False)
+                self.add_message(message.split("Assistant: ", 1)[1], align_right=False)
             else:
                 self.chat_history.append(message)
 
@@ -178,6 +185,7 @@ class ChatWindow(QWidget):
 
     def add_message(self, message, align_right=False):
         cursor = self.chat_history.textCursor()
+
         block_format = cursor.blockFormat()
         if align_right:
             block_format.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -185,18 +193,15 @@ class ChatWindow(QWidget):
             block_format.setAlignment(Qt.AlignmentFlag.AlignLeft)
         cursor.setBlockFormat(block_format)
 
-        frame_color = "#39FF14" if align_right else "#1E90FF"
+        frame_color = "#39FF14" if align_right else "#00BFFF"
+        message_class = "user" if align_right else "assistant"
         frame_html = f"""
         <div style="
-            background-color: {frame_color};
-            color: #000000;
-            border-radius: 15px;
-            padding: 10px;
-            margin: {'5px 0 5px auto' if align_right else '5px auto 5px 0'};
-            display: inline-block;
-            max-width: 70%;
         ">
-            {message}
+            <div style="
+                color: {frame_color};
+                margin: 10px 0px 5px 0px;
+            " class="{message_class}">{message}</div>
         </div>
         """
 
