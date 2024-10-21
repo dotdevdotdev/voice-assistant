@@ -30,10 +30,10 @@ class AssistantManager(QObject):
         self.voice_listening_active = False
         self.voice_thread = None
 
-        # Emit the initial chat history
-        initial_history = self.chat_history.get_history()
-        self.logger.debug(f"Initial chat history: {initial_history}")
-        self.update_chat_history.emit(initial_history)
+        # # Emit the initial chat history
+        # initial_history = self.chat_history.get_history()
+        # self.logger.debug(f"Initial chat history: {initial_history}")
+        # self.update_chat_history.emit(initial_history)
 
     def set_chat_window(self, chat_window):
         self.chat_window = chat_window

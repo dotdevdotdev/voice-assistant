@@ -47,7 +47,12 @@ Remember, you're having a chat, not giving a lecture. Keep it snappy, fun, and r
         "elevenlabs": {
             "model_id": "eleven_turbo_v2_5",
             "voice_id": "Crm8VULvkVs5ZBDa1Ixm",
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.5},
+            "voice_settings": {
+                "stability": 0.49,
+                "similarity_boost": 0.49,
+                "style_exaggeration": 0.49,
+                "speaker_boost": True,
+            },
         },
         "app": {
             "theme": {
@@ -108,15 +113,11 @@ def create_new_chat(va_name):
     elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
     deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
-    openai_settings = settings["openai"]
-    elevenlabs_settings = settings["elevenlabs"]
-
     assistant = Assistant(
         openai_api_key,
         elevenlabs_api_key,
         deepgram_api_key,
-        openai_settings,
-        elevenlabs_settings,
+        settings,
     )
 
     assistant_manager = AssistantManager(

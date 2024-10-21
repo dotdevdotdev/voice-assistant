@@ -23,6 +23,7 @@ import soundfile as sf
 import platform
 import sys
 import numpy as np
+from utils import find_input_device_index, find_output_device_index
 
 
 class Assistant:
@@ -31,8 +32,7 @@ class Assistant:
         openai_api_key,
         elevenlabs_api_key,
         deepgram_api_key,
-        openai_settings,
-        elevenlabs_settings,
+        settings,
         realtime_mode=False,
         save_path="~/projects/voice-assistant/data/",
     ):
@@ -42,6 +42,9 @@ class Assistant:
 
         # Now we can use self.logger
         self.logger.debug(f"Current working directory: {os.getcwd()}")
+
+        openai_settings = settings["openai"]
+        elevenlabs_settings = settings["elevenlabs"]
 
         # Set up save_path
         self.save_path = os.path.expanduser(save_path)
@@ -69,8 +72,16 @@ class Assistant:
         self.device_found = False
 
         self.pyaudio = pyaudio.PyAudio()
-        self.input_device_index = self.find_input_device(self.pyaudio)
-        # self.pyaudio.terminate()
+        self.input_device_index = find_input_device_index(
+            self.pyaudio,
+            preferred_device_name=settings["app"].get("input_device", None),
+            verbose=True,
+        )
+        self.output_device_index = find_output_device_index(
+            self.pyaudio,
+            preferred_device_name=settings["app"].get("output_device", None),
+            verbose=True,
+        )
 
         # Log system information
         self.log_system_info()
@@ -89,19 +100,6 @@ class Assistant:
 
         self.logger.info(f"Sounddevice version: {sd.__version__}")
         self.logger.info(f"SoundFile version: {sf.__version__}")
-
-        # Log audio devices
-        self.logger.info("Audio Input devices:")
-        for i in range(self.pyaudio.get_device_count()):
-            dev_info = self.pyaudio.get_device_info_by_index(i)
-            if dev_info["maxInputChannels"] > 0:
-                self.logger.info(f"  Device {i}: {dev_info['name']}")
-
-        self.logger.info("Audio Output devices:")
-        for i in range(self.pyaudio.get_device_count()):
-            dev_info = self.pyaudio.get_device_info_by_index(i)
-            if dev_info["maxOutputChannels"] > 0:
-                self.logger.info(f"  Device {i}: {dev_info['name']}")
 
     def listen(self):
         recognizer = sr.Recognizer()
@@ -125,36 +123,6 @@ class Assistant:
             except Exception as e:
                 self.logger.error(f"Error in listening: {e}")
                 return None
-
-    def find_input_device(self, p, preferred_device_name="(hw:4,0)"):
-        if preferred_device_name:
-            for i in range(p.get_device_count()):
-                dev = p.get_device_info_by_index(i)
-                if preferred_device_name.lower() in dev["name"].lower():
-                    self.logger.info(f"Found input device: {dev['name']}")
-                    return i
-
-        for i in range(p.get_device_count()):
-            dev = p.get_device_info_by_index(i)
-            if dev["maxInputChannels"] > 0:
-                self.logger.info(f"Found input device: {dev['name']}")
-                return i
-        return None
-
-    def find_output_device(self, p, preferred_device_name="(hw:0,8)"):
-        if preferred_device_name:
-            for i in range(p.get_device_count()):
-                dev = p.get_device_info_by_index(i)
-                if preferred_device_name.lower() in dev["name"].lower():
-                    self.logger.info(f"Found output device: {dev['name']}")
-                    return i
-
-        for i in range(p.get_device_count()):
-            dev = p.get_device_info_by_index(i)
-            if dev["maxOutputChannels"] > 0:
-                self.logger.info(f"Found output device: {dev['name']}")
-                return i
-        return None
 
     def transcribe(self, audio_data):
         return self.transcribe_with_deepgram(audio_data)
@@ -278,6 +246,8 @@ class Assistant:
 
             data, samplerate = sf.read(filepath)
             sd.play(data, samplerate)
+            # TODO: Uncomment this when we have a way to select the output device
+            # sd.play(data, samplerate, device=self.output_device_index)
             sd.wait()
 
             os.remove(filepath)

@@ -81,8 +81,6 @@ class ChatWindow(QWidget):
                 font-size: 18px;
                 font-weight: bold;
                 min-width: 100px;
-                transition: background-color 0.3s ease-out, color 0.3s ease-out, transform 0.3s ease-out;
-                transform: scale(1);
             }
             QPushButton:checked {
                 background-color: #39FF14;
@@ -122,8 +120,6 @@ class ChatWindow(QWidget):
                     font-size: 18px;
                     font-weight: bold;
                     min-width: 100px;
-                    transition: background-color 0.3s ease-out, color 0.3s ease-out, transform 0.3s ease-out;
-                    transform: scale(1);
                 }
                 QPushButton:checked {
                     background-color: #39FF14;
@@ -167,7 +163,7 @@ class ChatWindow(QWidget):
 
     def update_chat_history(self, history):
         logging.debug(f"Updating chat history for {self.va_name}")
-        logging.debug(f"Received history: {history}")
+        # logging.debug(f"Received history: {history}")
         self.chat_history.clear()
         messages = history.split("\n")
         for message in messages:
