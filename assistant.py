@@ -245,11 +245,12 @@ class Assistant:
 
             audio_segment.export(filepath, format="wav")
 
-            data, samplerate = sf.read(filepath)
-            sd.play(data, samplerate)
-            # TODO: Uncomment this when we have a way to select the output device
-            # sd.play(data, samplerate, device=self.output_device_index)
-            sd.wait()
+            with sf.SoundFile(filepath) as sf_file:
+                data = sf_file.read()
+                samplerate = sf_file.samplerate
+
+            with sd.play(data, samplerate, device=self.output_device_index):
+                sd.wait()
 
             os.remove(filepath)
 

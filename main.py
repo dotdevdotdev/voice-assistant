@@ -174,6 +174,12 @@ def main():
         ]
     )
 
+    # TODO: Improve application shutdown process
+    # - Research and implement a more reliable method to ensure cleanup tasks are executed
+    # - Consider using atexit module or QApplication.aboutToQuit signal with a single cleanup function
+    # - Optimize performance by consolidating cleanup tasks
+    # - Implement proper error handling and logging for shutdown process
+    # - Test thoroughly to ensure consistent execution of cleanup tasks before app closure
     app.aboutToQuit.connect(
         lambda: [manager.clipboard_thread.stop() for manager in assistant_managers]
     )
