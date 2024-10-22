@@ -1,0 +1,7 @@
+app:
+  theme:
+    background_color: "#000000"
+    text_color: "#39FF14"
+    accent_color: "#39FF14"
+  input_device: "(hw:4,0)"
+  output_device: "(hw:0,8)"

@@ -9,13 +9,14 @@ from assistant_manager import AssistantManager
 from clipboard_listener import ClipboardListener
 import argparse
 import logging
+import copy
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 
-def load_default_settings():
+def load_default_va_settings():
     DEFAULT_SYSTEM_PROMPT = """
 You're a clever, slightly sarcastic AI assistant. Keep it real, keep it short.
 
@@ -54,53 +55,45 @@ Remember, you're having a chat, not giving a lecture. Keep it snappy, fun, and r
                 "speaker_boost": True,
             },
         },
+        "user": {"username": "default_user"},
+    }
+
+
+def load_default_app_settings():
+    return {
         "app": {
             "theme": {
                 "background_color": "#000000",
                 "text_color": "#39FF14",
                 "accent_color": "#39FF14",
-            }
+            },
+            "input_device": "(hw:4,0)",
+            "output_device": "(hw:0,8)",
         },
-        "user": {"username": "default_user"},
     }
 
 
-def load_settings(settings_file=None):
-    default_settings = load_default_settings()
+def load_settings(settings_file=None, default_settings=load_default_va_settings()):
+    result = copy.deepcopy(default_settings)
+
     if settings_file:
         try:
             with open(settings_file, "r") as file:
                 user_settings = yaml.safe_load(file)
                 # Merge user settings with default settings
-                settings = default_settings.copy()
-                settings.update(user_settings)
-                return settings
+                result.update(user_settings)
+                return result
         except FileNotFoundError:
             logging.warning(
                 f"Warning: {settings_file} not found. Using default settings."
             )
-            return default_settings
+            return result
         except yaml.YAMLError as e:
             logging.error(f"Error parsing {settings_file}: {e}")
             logging.info("Using default settings.")
-            return default_settings
+            return result
     else:
-        # Try to load va-settings.yaml if no custom file is specified
-        try:
-            with open("va-settings.yaml", "r") as file:
-                user_settings = yaml.safe_load(file)
-                settings = default_settings.copy()
-                settings.update(user_settings)
-                return settings
-        except FileNotFoundError:
-            logging.warning(
-                "Warning: va-settings.yaml not found. Using default settings."
-            )
-            return default_settings
-        except yaml.YAMLError as e:
-            logging.error(f"Error parsing va-settings.yaml: {e}")
-            logging.info("Using default settings.")
-            return default_settings
+        return result
 
 
 def create_new_chat(va_name):
@@ -117,11 +110,12 @@ def create_new_chat(va_name):
         openai_api_key,
         elevenlabs_api_key,
         deepgram_api_key,
-        settings,
+        app_settings,
+        va_settings,
     )
 
     assistant_manager = AssistantManager(
-        assistant, log_file_path, va_name, settings["user"]["username"]
+        assistant, log_file_path, va_name, va_settings["user"]["username"]
     )
     assistant_manager.update_chat_history.connect(chat_window.update_chat_history)
     assistant_manager.write_to_cursor.connect(lambda text: pyautogui.write(text))
@@ -136,14 +130,15 @@ def create_new_chat(va_name):
 
 
 def main():
-    global main_window, assistant_managers, settings
+    global main_window, assistant_managers, app_settings, va_settings
     parser = argparse.ArgumentParser(
         description="Run the AI assistant with custom settings."
     )
     parser.add_argument("--settings", help="Path to the custom settings YAML file")
     args = parser.parse_args()
 
-    settings = load_settings(args.settings)
+    app_settings = load_settings("app-settings.yaml", load_default_app_settings())
+    va_settings = load_settings(args.settings, load_default_va_settings())
 
     openai_api_key = os.getenv("OPENAI_API_KEY")
     elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")

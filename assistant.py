@@ -32,7 +32,8 @@ class Assistant:
         openai_api_key,
         elevenlabs_api_key,
         deepgram_api_key,
-        settings,
+        app_settings,
+        va_settings,
         realtime_mode=False,
         save_path="~/projects/voice-assistant/data/",
     ):
@@ -43,8 +44,8 @@ class Assistant:
         # Now we can use self.logger
         self.logger.debug(f"Current working directory: {os.getcwd()}")
 
-        openai_settings = settings["openai"]
-        elevenlabs_settings = settings["elevenlabs"]
+        openai_settings = va_settings["openai"]
+        elevenlabs_settings = va_settings["elevenlabs"]
 
         # Set up save_path
         self.save_path = os.path.expanduser(save_path)
@@ -74,12 +75,12 @@ class Assistant:
         self.pyaudio = pyaudio.PyAudio()
         self.input_device_index = find_input_device_index(
             self.pyaudio,
-            preferred_device_name=settings["app"].get("input_device", None),
+            preferred_device_name=app_settings["app"].get("input_device", None),
             verbose=True,
         )
         self.output_device_index = find_output_device_index(
             self.pyaudio,
-            preferred_device_name=settings["app"].get("output_device", None),
+            preferred_device_name=app_settings["app"].get("output_device", None),
             verbose=True,
         )
 
