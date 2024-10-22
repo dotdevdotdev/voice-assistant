@@ -10,6 +10,7 @@ from clipboard_listener import ClipboardListener
 import argparse
 import logging
 import copy
+import atexit
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -129,6 +130,17 @@ def create_new_chat(va_name):
     return assistant_manager
 
 
+def cleanup():
+    logging.info("Performing cleanup tasks...")
+    for manager in assistant_managers:
+        try:
+            manager.clipboard_thread.stop()
+            manager.assistant.pyaudio.terminate()
+        except Exception as e:
+            logging.error(f"Error during cleanup for manager: {e}")
+    logging.info("Cleanup completed.")
+
+
 def main():
     global main_window, assistant_managers, app_settings, va_settings
     parser = argparse.ArgumentParser(
@@ -174,20 +186,7 @@ def main():
         ]
     )
 
-    # TODO: Improve application shutdown process
-    # - Research and implement a more reliable method to ensure cleanup tasks are executed
-    # - Consider using atexit module or QApplication.aboutToQuit signal with a single cleanup function
-    # - Optimize performance by consolidating cleanup tasks
-    # - Implement proper error handling and logging for shutdown process
-    # - Test thoroughly to ensure consistent execution of cleanup tasks before app closure
-    app.aboutToQuit.connect(
-        lambda: [manager.clipboard_thread.stop() for manager in assistant_managers]
-    )
-    app.aboutToQuit.connect(
-        lambda: [
-            manager.assistant.pyaudio.terminate() for manager in assistant_managers
-        ]
-    )
+    atexit.register(cleanup)
 
     sys.exit(app.exec())
 
