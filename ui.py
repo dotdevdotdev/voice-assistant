@@ -161,23 +161,59 @@ class ChatWindow(QWidget):
             self.send_message.emit(message)
             self.input_field.clear()
 
-    def update_chat_history(self, history):
-        logging.debug(f"Updating chat history for {self.va_name}")
-        # logging.debug(f"Received history: {history}")
-        self.chat_history.clear()
-        messages = history.split("\n")
-        for message in messages:
-            if "User" in message:
-                self.add_message(message.split("User: ", 1)[1], align_right=True)
-            elif "Assistant" in message:
-                self.add_message(message.split("Assistant: ", 1)[1], align_right=False)
-            else:
-                self.chat_history.append(message)
+    def update_chat_history(self, message, role="user", va_name=None):
+        # Check if we can access the main window and assistant managers
+        main_window = self.parent()
+        if hasattr(main_window, "assistant_managers"):
+            is_active = any(
+                manager.send_to_ai_active for manager in main_window.assistant_managers
+            )
+        else:
+            # Default to inactive if we can't access assistant managers yet
+            is_active = False
 
-        # Scroll to the bottom of the chat history
-        scrollbar = self.chat_history.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
-        logging.debug("Chat history updated and scrolled to bottom")
+        message_widget = QWidget()
+        layout = QHBoxLayout()
+        message_widget.setLayout(layout)
+
+        text_label = QLabel(message)
+        text_label.setWordWrap(True)
+        text_label.setStyleSheet(
+            f"""
+            background-color: {'#2b2b2b' if not is_active and role == 'user' else '#1e1e1e' if role == 'user' else '#2b5b2b'};
+            color: {'#808080' if not is_active and role == 'user' else '#ffffff'};
+            border-radius: 10px;
+            padding: 8px;
+            """
+        )
+
+        cursor = self.chat_history.textCursor()
+
+        # Fix the undefined align_right variable
+        align_right = role == "user"
+
+        block_format = cursor.blockFormat()
+        if align_right:
+            block_format.setAlignment(Qt.AlignmentFlag.AlignRight)
+        else:
+            block_format.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        cursor.setBlockFormat(block_format)
+
+        frame_color = "#39FF14" if align_right else "#00BFFF"
+        message_class = "user" if align_right else "assistant"
+        frame_html = f"""
+        <div style="
+        ">
+            <div style="
+                color: {frame_color};
+                margin: 10px 0px 5px 0px;
+            " class="{message_class}">{message}</div>
+        </div>
+        """
+
+        cursor.insertHtml(frame_html)
+        cursor.insertBlock()
+        self.chat_history.setTextCursor(cursor)
 
     def add_message(self, message, align_right=False):
         cursor = self.chat_history.textCursor()
@@ -223,8 +259,12 @@ class MainWindow(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("AI Assistant")
-        self.setGeometry(100, 100, 800, 600)
+        self.setWindowTitle("AI Assistant Chat")
+        self.resize(800, 600)
+
+        # Apply theme settings if available
+        if hasattr(self, "app_settings") and "theme" in self.app_settings["app"]:
+            self.apply_theme(self.app_settings["app"]["theme"])
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)

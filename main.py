@@ -1,6 +1,7 @@
 import sys
 import os
 import yaml
+import pyautogui
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QThread
 from ui import MainWindow, ChatWindow
@@ -11,6 +12,8 @@ import argparse
 import logging
 import copy
 import atexit
+from pathlib import Path
+from application import Application
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -97,35 +100,73 @@ def load_settings(settings_file=None, default_settings=load_default_va_settings(
         return result
 
 
-def create_new_chat(va_name):
-    log_file_path = os.path.join(os.getcwd(), "data", f"chat_history_{va_name}.json")
-    chat_window = ChatWindow(va_name, log_file_path)
-    main_window.add_chat_window(chat_window)
+def save_settings(settings, file_path):
+    """Save settings to a YAML file."""
+    try:
+        with open(file_path, "w") as file:
+            yaml.dump(settings, file, default_flow_style=False)
+        logging.info(f"Settings saved to {file_path}")
+    except Exception as e:
+        logging.error(f"Error saving settings to {file_path}: {e}")
 
-    # Get the necessary API keys and settings
+
+def load_va_configs():
+    """Load all VA configuration files from the root directory"""
+    va_configs = {}
+    root_path = Path(".")
+    for yaml_file in root_path.glob("va-*.yaml"):
+        try:
+            config = load_settings(str(yaml_file))
+            va_name = yaml_file.stem.replace("va-", "")
+            va_configs[va_name] = config
+        except Exception as e:
+            logging.error(f"Error loading VA config {yaml_file}: {e}")
+    return va_configs
+
+
+def create_assistant_manager(va_name, va_settings, chat_window):
+    """Create a new assistant manager for the given VA configuration"""
     openai_api_key = os.getenv("OPENAI_API_KEY")
     elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
     deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
-    assistant = Assistant(
-        openai_api_key,
-        elevenlabs_api_key,
-        deepgram_api_key,
-        app_settings,
-        va_settings,
-    )
+    # Add retry logic for assistant creation
+    max_retries = 3
+    retry_delay = 1  # seconds
 
+    for attempt in range(max_retries):
+        try:
+            assistant = Assistant(
+                openai_api_key,
+                elevenlabs_api_key,
+                deepgram_api_key,
+                app_settings,
+                va_settings,
+            )
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logging.warning(
+                    f"Attempt {attempt + 1} failed to initialize audio devices: {e}"
+                )
+                time.sleep(retry_delay)
+            else:
+                logging.error(
+                    f"Failed to initialize audio devices after {max_retries} attempts: {e}"
+                )
+                raise
+
+    log_file_path = os.path.join(os.getcwd(), "data", "chat_history.json")
     assistant_manager = AssistantManager(
         assistant, log_file_path, va_name, va_settings["user"]["username"]
     )
+
     assistant_manager.update_chat_history.connect(chat_window.update_chat_history)
     assistant_manager.write_to_cursor.connect(lambda text: pyautogui.write(text))
-
     chat_window.send_message.connect(assistant_manager.process_user_input)
     assistant_manager.set_chat_window(chat_window)
-
-    # Start voice listening by default
-    assistant_manager.set_send_to_ai_active(True)
+    # Change this line to start with AI disabled
+    assistant_manager.set_send_to_ai_active(False)
 
     return assistant_manager
 
@@ -142,55 +183,77 @@ def cleanup():
 
 
 def main():
-    global main_window, assistant_managers, app_settings, va_settings
-    parser = argparse.ArgumentParser(
-        description="Run the AI assistant with custom settings."
-    )
-    parser.add_argument("--settings", help="Path to the custom settings YAML file")
-    args = parser.parse_args()
+    global main_window, assistant_managers, app_settings
 
-    app_settings = load_settings("app-settings.yaml", load_default_app_settings())
-    va_settings = load_settings(args.settings, load_default_va_settings())
+    # Handle app settings
+    app_settings_path = Path("app-settings.yaml")
+    default_app_settings = load_default_app_settings()
 
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
-    deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+    if app_settings_path.exists():
+        app_settings = load_settings(str(app_settings_path), default_app_settings)
+    else:
+        app_settings = default_app_settings
+        save_settings(app_settings, app_settings_path)
+        logging.info("Created default app-settings.yaml file")
 
-    if not openai_api_key or not elevenlabs_api_key or not deepgram_api_key:
+    # Verify API keys
+    required_keys = ["OPENAI_API_KEY", "ELEVENLABS_API_KEY", "DEEPGRAM_API_KEY"]
+    missing_keys = [key for key in required_keys if not os.getenv(key)]
+    if missing_keys:
         logging.error(
-            "Error: OPENAI_API_KEY, ELEVENLABS_API_KEY, and DEEPGRAM_API_KEY must be set as environment variables."
+            f"Error: Missing required environment variables: {', '.join(missing_keys)}"
         )
         sys.exit(1)
 
-    # Create data directory if it doesn't exist
+    # Create data directory
     data_dir = os.path.join(os.getcwd(), "data")
     os.makedirs(data_dir, exist_ok=True)
 
+    # Initialize application
     app = QApplication(sys.argv)
     main_window = MainWindow()
-
+    main_window.assistant_managers = []  # Add this line
     clipboard_listener = ClipboardListener()
+    assistant_managers = main_window.assistant_managers  # Update the global reference
 
-    assistant_managers = []
+    # Create single chat window
+    chat_window = ChatWindow(
+        "Multi-Assistant Chat", os.path.join(data_dir, "chat_history.json")
+    )
+    main_window.setCentralWidget(chat_window)
+
+    # Add a small delay before creating assistant managers
+    QTimer.singleShot(1000, lambda: initialize_assistants(chat_window))
 
     main_window.show()
-
-    main_window.new_chat_window.connect(
-        lambda va_name: assistant_managers.append(create_new_chat(va_name))
-    )
-    create_new_chat("Default_AI")
-
-    clipboard_listener.clipboard_changed.connect(
-        lambda content: [
-            manager.process_clipboard_content(content) for manager in assistant_managers
-        ]
-    )
-
     atexit.register(cleanup)
-
     sys.exit(app.exec())
 
 
+def initialize_assistants(chat_window):
+    """Initialize assistant managers with a delay"""
+    va_configs = load_va_configs()
+    for va_name, va_settings in va_configs.items():
+        try:
+            assistant_manager = create_assistant_manager(
+                va_name, va_settings, chat_window
+            )
+            assistant_managers.append(assistant_manager)
+        except Exception as e:
+            logging.error(f"Failed to create assistant manager for {va_name}: {e}")
+
+
 if __name__ == "__main__":
-    logging.debug("Starting main function")
+    # Load app settings before running the application
+    app_settings_path = Path("app-settings.yaml")
+    default_app_settings = load_default_app_settings()
+
+    if app_settings_path.exists():
+        app_settings = load_settings(str(app_settings_path), default_app_settings)
+    else:
+        app_settings = default_app_settings
+        save_settings(app_settings, app_settings_path)
+        logging.info("Created default app-settings.yaml file")
+
+    # Just call the main() function which already has the working QApplication setup
     main()
