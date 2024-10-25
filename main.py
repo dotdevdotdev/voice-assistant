@@ -68,8 +68,8 @@ def load_default_app_settings():
                 "text_color": "#39FF14",
                 "accent_color": "#39FF14",
             },
-            "input_device": "(hw:4,0)",
-            "output_device": "(hw:0,8)",
+            "input_device": "PD200X",
+            "output_device": "Smart M70D",
         },
     }
 

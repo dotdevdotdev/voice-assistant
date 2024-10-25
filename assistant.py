@@ -72,17 +72,25 @@ class Assistant:
         self.realtime_mode = realtime_mode
         self.device_found = False
 
-        self.pyaudio = pyaudio.PyAudio()
-        self.input_device_index = find_input_device_index(
-            self.pyaudio,
-            preferred_device_name=app_settings["app"].get("input_device", None),
-            verbose=True,
-        )
-        self.output_device_index = find_output_device_index(
-            self.pyaudio,
-            preferred_device_name=app_settings["app"].get("output_device", None),
-            verbose=True,
-        )
+        # Initialize PyAudio with proper error handling
+        try:
+            self.pyaudio = pyaudio.PyAudio()
+            self.input_device_index = find_input_device_index(
+                self.pyaudio,
+                preferred_device_name=app_settings["app"].get("input_device", None),
+                verbose=True,
+            )
+            self.output_device_index = find_output_device_index(
+                self.pyaudio,
+                preferred_device_name=app_settings["app"].get("output_device", None),
+                verbose=True,
+            )
+            if self.input_device_index is None or self.output_device_index is None:
+                self.logger.error("Failed to find input or output device")
+                raise ValueError("Failed to find input or output device")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize audio: {e}")
+            raise
 
         # Log system information
         self.log_system_info()
@@ -230,6 +238,7 @@ class Assistant:
 
     def play_audio(self, audio_data):
         try:
+            # Convert input to AudioSegment if needed
             if isinstance(audio_data, str):
                 audio_segment = AudioSegment.from_wav(audio_data)
             elif isinstance(audio_data, AudioSegment):
@@ -239,27 +248,52 @@ class Assistant:
                     "Invalid audio_data type. Expected str or AudioSegment."
                 )
 
+            # Export with explicit high-quality settings
             timestamp = int(time.time())
-            filename = f"audio_{timestamp}.wav"
-            filepath = os.path.join(self.save_path, filename)
+            temp_wav = os.path.join(self.save_path, f"audio_{timestamp}.wav")
 
-            audio_segment.export(filepath, format="wav")
+            # Export with specific parameters for better quality
+            audio_segment.export(
+                temp_wav,
+                format="wav",
+                parameters=[
+                    "-ar",
+                    "44100",  # Sample rate
+                    "-ac",
+                    "1",  # Mono audio
+                    "-acodec",
+                    "pcm_s16le",  # 16-bit PCM
+                ],
+            )
 
-            with sf.SoundFile(filepath) as sf_file:
-                data = sf_file.read()
-                samplerate = sf_file.samplerate
+            try:
+                # Read with explicit dtype for better precision
+                data, samplerate = sf.read(temp_wav, dtype="float32")
 
-            with sd.play(data, samplerate, device=self.output_device_index):
-                sd.wait()
+                # Ensure proper normalization
+                if data.max() > 1.0 or data.min() < -1.0:
+                    data = np.clip(data, -1.0, 1.0)
 
-            os.remove(filepath)
+                # Play with explicit device settings
+                sd.play(data, samplerate, device=self.output_device_index)
+                sd.wait()  # Wait until audio is finished playing
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_wav):
+                    os.remove(temp_wav)
 
         except Exception as e:
-            self.logger.error(f"Unexpected error in play_audio: {str(e)}")
+            self.logger.error(f"Error in play_audio: {str(e)}")
             self.logger.exception("Stack trace:")
+            raise
 
     def speak(self, text):
         sound = self.generate_audio(text)
 
         if sound:
             self.play_audio(sound)
+
+    def __del__(self):
+        """Ensure proper cleanup of PyAudio resources"""
+        if hasattr(self, "pyaudio"):
+            self.pyaudio.terminate()
