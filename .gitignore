@@ -48,3 +48,5 @@ env/
 
 /data/
 /data/**
+
+app-settings.yaml
