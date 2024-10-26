@@ -15,6 +15,7 @@ import copy
 import atexit
 from pathlib import Path
 from application import Application
+from ui.styles import GLOBAL_STYLE  # Add this import at the top
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -215,10 +216,12 @@ def main():
 
     # Initialize application
     app = QApplication(sys.argv)
+    app.setStyleSheet(GLOBAL_STYLE)  # Add this line to apply the global style
+
     main_window = MainWindow()
-    main_window.assistant_managers = []  # Add this line
+    main_window.assistant_managers = []
     clipboard_listener = ClipboardListener()
-    assistant_managers = main_window.assistant_managers  # Update the global reference
+    assistant_managers = main_window.assistant_managers
 
     # Create single chat window
     chat_window = ChatWindow(
