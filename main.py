@@ -127,48 +127,27 @@ def load_va_configs():
 
 
 def create_assistant_manager(va_name, va_settings, chat_window):
-    """Create a new assistant manager for the given VA configuration"""
-    openai_api_key = os.getenv("OPENAI_API_KEY")
+    # Get API keys from environment
     elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
     deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
-    # Add retry logic for assistant creation
-    max_retries = 3
-    retry_delay = 1  # seconds
+    # Create assistant with all required parameters
+    assistant = Assistant(
+        elevenlabs_api_key=elevenlabs_api_key,
+        deepgram_api_key=deepgram_api_key,
+        app_settings=app_settings,  # This is global
+        va_settings=va_settings,
+    )
 
-    for attempt in range(max_retries):
-        try:
-            assistant = Assistant(
-                openai_api_key,
-                elevenlabs_api_key,
-                deepgram_api_key,
-                app_settings,
-                va_settings,
-            )
-            break
-        except Exception as e:
-            if attempt < max_retries - 1:
-                logging.warning(
-                    f"Attempt {attempt + 1} failed to initialize audio devices: {e}"
-                )
-                time.sleep(retry_delay)
-            else:
-                logging.error(
-                    f"Failed to initialize audio devices after {max_retries} attempts: {e}"
-                )
-                raise
-
-    log_file_path = os.path.join(os.getcwd(), "data", "chat_history.json")
     assistant_manager = AssistantManager(
-        assistant, log_file_path, va_name, va_settings["user"]["username"]
+        assistant=assistant,
+        va_name=va_name,
+        username=va_settings.get("username", "User"),
     )
 
     # Add the assistant to the participants list
     chat_window.add_participant(va_name)
 
-    assistant_manager.update_chat_history.connect(chat_window.update_chat_history)
-    assistant_manager.write_to_cursor.connect(lambda text: pyautogui.write(text))
-    chat_window.send_message.connect(assistant_manager.process_user_input)
     assistant_manager.set_chat_window(chat_window)
     # Change this line to start with AI disabled
     assistant_manager.set_send_to_ai_active(False)
@@ -224,13 +203,26 @@ def main():
     assistant_managers = main_window.assistant_managers
 
     # Create single chat window
-    chat_window = ChatWindow(
-        "Multi-Assistant Chat", os.path.join(data_dir, "chat_history.json")
-    )
+    chat_window = ChatWindow("Multi-Assistant Chat")
     main_window.setCentralWidget(chat_window)
+
+    # Store chat_window reference
+    main_window.chat_window = chat_window
+
+    # Initialize assistant managers list
+    main_window.assistant_managers = []
+    assistant_managers = main_window.assistant_managers
 
     # Add a small delay before creating assistant managers
     QTimer.singleShot(1000, lambda: initialize_assistants(chat_window))
+
+    # Add test message to verify display works
+    QTimer.singleShot(
+        2000,
+        lambda: chat_window.display_message(
+            "Welcome to the chat!", role="assistant", va_name="System"
+        ),
+    )
 
     main_window.show()
     atexit.register(cleanup)

@@ -19,10 +19,9 @@ class ChatWindow(QWidget):
     send_ai_toggled = pyqtSignal(bool)
     monitor_clipboard_toggled = pyqtSignal(bool)
 
-    def __init__(self, title, log_file_path):
+    def __init__(self, title):
         super().__init__()
         self.title = title
-        self.log_file_path = log_file_path
         self.setup_ui()
 
     def setup_ui(self):
@@ -70,6 +69,18 @@ class ChatWindow(QWidget):
         # Chat display area
         self.chat_display = QTextEdit()
         self.chat_display.setReadOnly(True)
+        self.chat_display.setAcceptRichText(True)
+        self.chat_display.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {DARK_BG};
+                border: 2px solid {NEON_GREEN};
+                border-radius: 4px;
+                padding: 10px;
+            }}
+        """)
+
+        # Initialize with a simple HTML structure
+        self.chat_display.setHtml('<div id="chat-container"></div>')
 
         splitter.addWidget(self.participants_list)
         splitter.addWidget(self.chat_display)
@@ -106,6 +117,11 @@ class ChatWindow(QWidget):
         self.toggle_clipboard_button = QPushButton("Toggle Clipboard")
         self.toggle_clipboard_button.setCheckable(True)
 
+        # Add test button for debugging
+        self.test_button = QPushButton("Test Messages")
+        self.test_button.clicked.connect(self.test_messages)
+        controls_layout.addWidget(self.test_button)
+
         controls_layout.addWidget(self.toggle_cursor_button)
         controls_layout.addWidget(self.toggle_ai_button)
         controls_layout.addWidget(self.toggle_clipboard_button)
@@ -122,11 +138,56 @@ class ChatWindow(QWidget):
     def send_message_clicked(self):
         message = self.message_input.text().strip()
         if message:
+            print(f"ChatWindow: Sending message: {message}")
+            # Remove the receivers check since it's not available in PyQt6
             self.send_message.emit(message)
             self.message_input.clear()
+            # Add immediate test display
+            print("ChatWindow: Testing direct message display")
+            self.display_message(message, role="user")
 
-    def update_chat_history(self, history):
-        self.chat_display.setHtml(history)
+    def display_message(self, message, role="user", va_name=None):
+        # Set text color
+        text_color = NEON_GREEN if role == "user" else NEON_BLUE
+
+        # Create message HTML
+        message_html = f"""
+            <div style="
+                display: inline-block;
+                max-width: 70%;
+                padding: 12px;
+                border: 2px solid {text_color};
+                border-radius: 10px;
+                color: {text_color};
+                background-color: {DARK_BG};
+                font-size: 14pt;
+            ">
+                <div style="line-height: 1.4;">
+                    {message}
+                </div>
+                <div style="
+                    font-size: 11pt;
+                    color: #666;
+                    margin-top: 5px;
+                    text-align: {'right' if role == 'user' else 'left'};
+                ">
+                    {va_name if va_name and not role == 'user' else 'You'}
+                </div>
+            </div>
+        """
+
+        # Get current content
+        cursor = self.chat_display.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+
+        # Insert a line break if there's already content
+        if not self.chat_display.toPlainText().strip() == "":
+            cursor.insertHtml("<br /><br />")
+
+        # Insert the new message
+        cursor.insertHtml(message_html)
+
+        # Scroll to the bottom
         self.chat_display.verticalScrollBar().setValue(
             self.chat_display.verticalScrollBar().maximum()
         )
@@ -138,3 +199,17 @@ class ChatWindow(QWidget):
         items = self.participants_list.findItems(name, Qt.MatchFlag.MatchExactly)
         for item in items:
             self.participants_list.takeItem(self.participants_list.row(item))
+
+    def test_messages(self):
+        """Debug function to test message display"""
+        print("Testing message display...")
+
+        # Test user message
+        self.display_message("This is a test user message", role="user")
+
+        # Test assistant message
+        self.display_message(
+            "This is a test assistant response",
+            role="assistant",
+            va_name="Test Assistant",
+        )

@@ -40,7 +40,6 @@ QComboBox::down-arrow {{
     border-bottom: 2px solid {NEON_GREEN};
     width: 8px;
     height: 8px;
-    transform: rotate(-45deg);
     margin-right: 8px;
 }}
 
@@ -62,18 +61,5 @@ QTextEdit, QLineEdit {{
     border: 2px solid {NEON_GREEN};
     border-radius: 4px;
     padding: 5px;
-}}
-
-/* Chat bubble styling */
-QTextEdit[chat="user"] {{
-    background-color: {DARK_BG};
-    color: {NEON_GREEN};
-    border: 2px solid {NEON_GREEN};
-}}
-
-QTextEdit[chat="assistant"] {{
-    background-color: {DARK_BG};
-    color: {NEON_BLUE};
-    border: 2px solid {NEON_BLUE};
 }}
 """
