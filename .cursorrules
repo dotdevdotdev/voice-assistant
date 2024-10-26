@@ -68,3 +68,11 @@ MUST Maintain all signal/slot connection patterns
 MUST Use COMPANY_API_KEY naming convention for all API keys
 MUST Assume environment variables are pre-loaded
 NEVER Use dotenv or similar environment loading libraries
+
+## Settings Files
+
+MUST Use YAML format for all settings and configuration files
+MUST Include proper YAML validation in config loading
+MUST Follow established YAML structure patterns
+MUST Document all YAML configuration options
+MUST Maintain backwards compatibility in YAML schemas

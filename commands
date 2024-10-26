@@ -1,0 +1,8 @@
+mkdir -p ai_assistant/core/interfaces
+mkdir -p ai_assistant/modules/audio
+mkdir -p ai_assistant/modules/speech
+mkdir -p ai_assistant/modules/assistant
+mkdir -p ai_assistant/modules/clipboard
+mkdir -p ai_assistant/ui/components
+mkdir -p ai_assistant/config
+mkdir -p ai_assistant/utils
