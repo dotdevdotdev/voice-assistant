@@ -2,6 +2,7 @@ import sys
 import os
 import yaml
 import pyautogui
+import time  # Add this import
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QThread
 from ui import MainWindow, ChatWindow
@@ -161,6 +162,9 @@ def create_assistant_manager(va_name, va_settings, chat_window):
         assistant, log_file_path, va_name, va_settings["user"]["username"]
     )
 
+    # Add the assistant to the participants list
+    chat_window.add_participant(va_name)
+
     assistant_manager.update_chat_history.connect(chat_window.update_chat_history)
     assistant_manager.write_to_cursor.connect(lambda text: pyautogui.write(text))
     chat_window.send_message.connect(assistant_manager.process_user_input)
@@ -233,14 +237,26 @@ def main():
 def initialize_assistants(chat_window):
     """Initialize assistant managers with a delay"""
     va_configs = load_va_configs()
-    for va_name, va_settings in va_configs.items():
+
+    # Update assistant selector with available assistants
+    chat_window.assistant_selector.update_assistants(va_configs.keys())
+
+    # Connect the add button
+    chat_window.assistant_selector.add_button.clicked.connect(
+        lambda: add_selected_assistant(chat_window, va_configs)
+    )
+
+
+def add_selected_assistant(chat_window, va_configs):
+    selected = chat_window.assistant_selector.assistant_combo.currentText()
+    if selected and selected in va_configs:
         try:
             assistant_manager = create_assistant_manager(
-                va_name, va_settings, chat_window
+                selected, va_configs[selected], chat_window
             )
             assistant_managers.append(assistant_manager)
         except Exception as e:
-            logging.error(f"Failed to create assistant manager for {va_name}: {e}")
+            logging.error(f"Failed to create assistant manager for {selected}: {e}")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+# Copy all contents from ui.py into this file
 from PyQt6.QtWidgets import (
     QMainWindow,
     QPushButton,
@@ -21,6 +22,11 @@ import pyautogui
 import logging
 import json
 import os
+from .assistant_selector import AssistantSelector  # Note the relative import
+
+
+# Rest of the contents from ui.py...
+# (Copy everything else from ui.py, keeping the same class definitions)
 
 
 class ChatWindow(QWidget):
@@ -29,120 +35,54 @@ class ChatWindow(QWidget):
     monitor_clipboard_toggled = pyqtSignal(bool)
     send_ai_toggled = pyqtSignal(bool)  # New signal
 
-    def __init__(self, va_name, log_file_path):
+    def __init__(self, title, log_file_path):
         super().__init__()
-        self.va_name = va_name
-        self.log_file_path = log_file_path
-        self.init_ui()
-        self.load_chat_history()
+        self.layout = QVBoxLayout()
+        self.log_file_path = log_file_path  # Add this line
 
-    def init_ui(self):
-        layout = QVBoxLayout()
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(20)
+        # Add participants list
+        self.participants_label = QLabel("Participants: (You)")
+        self.layout.addWidget(self.participants_label)
 
-        # Chat history area
-        self.chat_history = QTextEdit()
+        # Add assistant selector
+        self.assistant_selector = AssistantSelector()
+        self.layout.addWidget(self.assistant_selector)
+
+        # Chat history display (rename chat_display to chat_history)
+        self.chat_history = QTextEdit()  # Changed from chat_display
         self.chat_history.setReadOnly(True)
-        self.chat_history.setStyleSheet("""
-            font-family: monospace;
-            font-size: 18px;
-            font-weight: bold;
-            color: #000000;
-        """)
-        layout.addWidget(self.chat_history)
+        self.layout.addWidget(self.chat_history)
 
         # Input area
         input_layout = QHBoxLayout()
-        input_layout.setSpacing(15)
-        self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("Type your message here...")
-        self.input_field.setStyleSheet("""
-            QLineEdit {
-                background-color: #000000;
-                color: #FFFFFF;
-                border: 2px solid #39FF14;
-                border-radius: 20px;
-                padding: 10px 15px;
-                font-family: monospace;
-                font-size: 18px;
-                font-weight: bold;
-            }
-        """)
+        self.message_input = QTextEdit()
+        self.message_input.setFixedHeight(50)
         self.send_button = QPushButton("Send")
-        self.send_button.setStyleSheet("""
-            QPushButton {
-                background-color: #000000;
-                color: #39FF14;
-                border: 2px solid #39FF14;
-                border-radius: 20px;
-                padding: 10px 20px;
-                font-family: monospace;
-                font-size: 18px;
-                font-weight: bold;
-                min-width: 100px;
-            }
-            QPushButton:checked {
-                background-color: #39FF14;
-                color: #000000;
-            }
-            QPushButton:hover {
-                background-color: #39FF14;
-                color: #000000;
-            }
-        """)
+        self.ai_toggle = QPushButton("AI")
+        self.ai_toggle.setCheckable(True)
+        self.ai_toggle.setChecked(False)
 
-        input_layout.addWidget(self.input_field)
+        input_layout.addWidget(self.message_input)
         input_layout.addWidget(self.send_button)
-        layout.addLayout(input_layout)
+        input_layout.addWidget(self.ai_toggle)
 
-        # Toolbar
-        toolbar_layout = QHBoxLayout()
-        toolbar_layout.setSpacing(15)
-        self.send_ai_toggle = QPushButton("Send to AI")
-        self.output_cursor_toggle = QPushButton("Output to Cursor")
-        self.monitor_clipboard_toggle = QPushButton("Monitor Clipboard")
-
-        for button in [
-            self.send_ai_toggle,
-            self.output_cursor_toggle,
-            self.monitor_clipboard_toggle,
-        ]:
-            button.setCheckable(True)
-            button.setStyleSheet("""
-                QPushButton {
-                    background-color: #000000;
-                    color: #39FF14;
-                    border: 2px solid #39FF14;
-                    border-radius: 20px;
-                    padding: 10px 20px;
-                    font-family: monospace;
-                    font-size: 18px;
-                    font-weight: bold;
-                    min-width: 100px;
-                }
-                QPushButton:checked {
-                    background-color: #39FF14;
-                    color: #000000;
-                }
-                QPushButton:hover {
-                    background-color: #39FF14;
-                    color: #000000;
-                }
-            """)
-            toolbar_layout.addWidget(button)
-
-        self.send_ai_toggle.setChecked(True)
-        layout.addLayout(toolbar_layout)
-
-        self.setLayout(layout)
+        self.layout.addLayout(input_layout)
+        self.setLayout(self.layout)
 
         # Connect signals
-        self.send_button.clicked.connect(self.send_message_action)
-        self.input_field.returnPressed.connect(self.send_message_action)
-        self.output_cursor_toggle.toggled.connect(self.on_output_cursor_toggled)
-        self.monitor_clipboard_toggle.toggled.connect(self.on_monitor_clipboard_toggled)
-        self.send_ai_toggle.toggled.connect(self.on_send_ai_toggled)
+        self.send_button.clicked.connect(self.send_message_clicked)
+        self.message_input.textChanged.connect(self.handle_input)
+        self.ai_toggle.clicked.connect(self.on_send_ai_toggled)  # Add this line
+
+        self.participants = ["(You)"]
+
+    def add_participant(self, name):
+        if name not in self.participants:
+            self.participants.append(name)
+            self.update_participants_label()
+
+    def update_participants_label(self):
+        self.participants_label.setText("Participants: " + ", ".join(self.participants))
 
     def on_output_cursor_toggled(self, checked):
         self.output_to_cursor_toggled.emit(checked)
@@ -154,12 +94,12 @@ class ChatWindow(QWidget):
         self.send_ai_toggled.emit(checked)
         logging.info(f"Send to AI toggled: {checked}")
 
-    def send_message_action(self):
-        message = self.input_field.text().strip()
+    def send_message_clicked(self):
+        message = self.message_input.toPlainText().strip()
         if message:
             logging.info(f"Sending message: {message}")
             self.send_message.emit(message)
-            self.input_field.clear()
+            self.message_input.clear()
 
     def update_chat_history(self, message, role="user", va_name=None):
         # Check if we can access the main window and assistant managers
@@ -248,6 +188,16 @@ class ChatWindow(QWidget):
             self.update_chat_history(
                 "\n".join([f"{entry['type']}: {entry['content']}" for entry in history])
             )
+
+    def handle_input(self):
+        # This method is called when text changes in the input field
+        # For now, we'll just use it to handle Enter key presses
+        if self.message_input.document().size().height() > 50:
+            # If text is too long, prevent new lines
+            text = self.message_input.toPlainText()
+            text = text.replace("\n", "")
+            self.message_input.setPlainText(text)
+            self.message_input.moveCursor(self.message_input.textCursor().End)
 
 
 class MainWindow(QMainWindow):
