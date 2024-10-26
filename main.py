@@ -16,6 +16,7 @@ import atexit
 from pathlib import Path
 from application import Application
 from ui.styles import GLOBAL_STYLE  # Add this import at the top
+from settings import Settings
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"

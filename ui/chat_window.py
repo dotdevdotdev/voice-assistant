@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QSplitter,
 )
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QSettings
 from .assistant_selector import AssistantSelector
 from .styles import NEON_GREEN, NEON_BLUE, DARK_BG
 
@@ -18,11 +18,21 @@ class ChatWindow(QWidget):
     output_to_cursor_toggled = pyqtSignal(bool)
     send_ai_toggled = pyqtSignal(bool)
     monitor_clipboard_toggled = pyqtSignal(bool)
+    # Add a new signal
+    assistant_selected = pyqtSignal(str)
 
     def __init__(self, title):
         super().__init__()
         self.title = title
+        self.settings = QSettings("VoiceAssistant", "App")
         self.setup_ui()
+
+        # Connect the assistant selector signal
+        self.assistant_selector.assistant_selected.connect(self.on_assistant_selected)
+
+    def on_assistant_selected(self, assistant_name):
+        # Emit the signal to the main application
+        self.assistant_selected.emit(assistant_name)
 
     def setup_ui(self):
         main_layout = QVBoxLayout()
@@ -75,12 +85,19 @@ class ChatWindow(QWidget):
                 background-color: {DARK_BG};
                 border: 2px solid {NEON_GREEN};
                 border-radius: 4px;
-                padding: 10px;
+                padding: 0px;  /* Remove padding here */
             }}
         """)
 
-        # Initialize with a simple HTML structure
-        self.chat_display.setHtml('<div id="chat-container"></div>')
+        # Initialize with proper HTML structure
+        self.chat_display.setHtml("""
+            <html>
+                <body style="margin: 0; padding: 0; width: 100%;">
+                    <div id="chat-container" style="width: 100%; padding: 10px;">
+                    </div>
+                </body>
+            </html>
+        """)
 
         splitter.addWidget(self.participants_list)
         splitter.addWidget(self.chat_display)
@@ -150,29 +167,38 @@ class ChatWindow(QWidget):
         # Set text color
         text_color = NEON_GREEN if role == "user" else NEON_BLUE
 
-        # Create message HTML
-        message_html = f"""
-            <div style="
-                display: inline-block;
-                max-width: 70%;
-                padding: 12px;
-                border: 2px solid {text_color};
-                border-radius: 10px;
-                color: {text_color};
-                background-color: {DARK_BG};
-                font-size: 14pt;
-            ">
-                <div style="line-height: 1.4;">
-                    {message}
-                </div>
-                <div style="
-                    font-size: 11pt;
-                    color: #666;
-                    margin-top: 5px;
-                    text-align: {'right' if role == 'user' else 'left'};
-                ">
-                    {va_name if va_name and not role == 'user' else 'You'}
-                </div>
+        # Create message HTML using table layout
+        container_html = f"""
+            <div style="display: block; width: 100%; margin: 10px 0;">
+                <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                        <td align="{'right' if role == 'user' else 'left'}" style="padding: 0;">
+                            <table style="width: 70%; border-collapse: separate;" align="{'right' if role == 'user' else 'left'}">
+                                <tr>
+                                    <td style="
+                                        padding: 12px;
+                                        border: 2px solid {text_color};
+                                        border-radius: 10px;
+                                        color: {text_color};
+                                        background-color: {DARK_BG};
+                                        font-size: 14pt;
+                                    ">
+                                        <div style="line-height: 1.4;">
+                                            {message}
+                                        </div>
+                                        <div style="
+                                            font-size: 11pt;
+                                            color: #666;
+                                            margin-top: 5px;
+                                        ">
+                                            {va_name if va_name and not role == 'user' else 'You'}
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
             </div>
         """
 
@@ -180,12 +206,8 @@ class ChatWindow(QWidget):
         cursor = self.chat_display.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
 
-        # Insert a line break if there's already content
-        if not self.chat_display.toPlainText().strip() == "":
-            cursor.insertHtml("<br /><br />")
-
         # Insert the new message
-        cursor.insertHtml(message_html)
+        cursor.insertHtml(container_html)
 
         # Scroll to the bottom
         self.chat_display.verticalScrollBar().setValue(
