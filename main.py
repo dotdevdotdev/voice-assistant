@@ -132,18 +132,24 @@ def create_assistant_manager(va_name, va_settings, chat_window):
     elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
     deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 
-    # Create assistant with all required parameters
+    # Create assistant with only the required parameters
     assistant = Assistant(
-        elevenlabs_api_key=elevenlabs_api_key,
-        deepgram_api_key=deepgram_api_key,
-        app_settings=app_settings,  # This is global
-        va_settings=va_settings,
+        name=va_name,
+        voice_id=va_settings.get("elevenlabs", {}).get("voice_id"),
+        stability=va_settings.get("elevenlabs", {})
+        .get("voice_settings", {})
+        .get("stability"),
+        similarity_boost=va_settings.get("elevenlabs", {})
+        .get("voice_settings", {})
+        .get("similarity_boost"),
     )
 
+    # Create manager with the API keys
     assistant_manager = AssistantManager(
         assistant=assistant,
         va_name=va_name,
-        username=va_settings.get("username", "User"),
+        username=va_settings.get("user", {}).get("username"),
+        elevenlabs_api_key=elevenlabs_api_key,
     )
 
     # Add the assistant to the participants list

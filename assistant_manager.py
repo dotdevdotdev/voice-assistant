@@ -11,9 +11,15 @@ class AssistantManager(QObject):
     write_to_cursor = pyqtSignal(str)
     voice_input_received = pyqtSignal(str)
 
-    def __init__(self, assistant, va_name, username):
+    def __init__(
+        self, assistant=None, va_name=None, username=None, elevenlabs_api_key=None
+    ):
         super().__init__()
         self.logger = logging.getLogger(__name__)
+        self.elevenlabs_api_key = elevenlabs_api_key
+        self.assistants = {}
+
+        # Initialize manager-specific attributes
         self.assistant = assistant
         self.va_name = va_name
         self.username = username
@@ -31,6 +37,23 @@ class AssistantManager(QObject):
         )
         self.voice_listening_active = False
         self.voice_thread = None
+
+    def create_assistant(
+        self, name, voice_id=None, stability=None, similarity_boost=None
+    ):
+        try:
+            # Create assistant without passing the API key
+            assistant = Assistant(
+                name=name,
+                voice_id=voice_id,
+                stability=stability,
+                similarity_boost=similarity_boost,
+            )
+            self.assistants[name] = assistant
+            return assistant
+        except Exception as e:
+            logging.error(f"Failed to create assistant manager for {name}: {str(e)}")
+            raise
 
     def set_chat_window(self, chat_window):
         print(f"Setting chat window for {self.va_name}")  # Debug print
