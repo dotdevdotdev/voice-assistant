@@ -1,39 +1,64 @@
-from PyQt6.QtWidgets import QWidget, QComboBox, QPushButton, QHBoxLayout, QLabel
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QComboBox, QPushButton
+from PyQt6.QtCore import pyqtSignal
+from event_bus import EventBus
 
 
 class AssistantSelector(QWidget):
-    # Add the signal
-    assistant_selected = pyqtSignal(str)
+    assistant_selected = pyqtSignal(str)  # Emits selected assistant name
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.layout = QHBoxLayout()
+    def __init__(self):
+        super().__init__()
+        self.event_bus = EventBus.get_instance()
+        self.setup_ui()
 
-        # Set spacing and margins
-        self.layout.setSpacing(10)
-        self.layout.setContentsMargins(10, 10, 10, 10)
+    def setup_ui(self):
+        layout = QHBoxLayout(self)
 
+        # Assistant dropdown
         self.assistant_combo = QComboBox()
-        self.add_button = QPushButton("Add to Chat")
+        self.assistant_combo.currentTextChanged.connect(self._handle_selection)
 
-        label = QLabel("Select Assistant:")
-        label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        # Add/Remove buttons
+        self.add_button = QPushButton("Add")
+        self.remove_button = QPushButton("Remove")
+        self.remove_button.setEnabled(False)
 
-        self.layout.addWidget(label)
-        self.layout.addWidget(self.assistant_combo)
-        self.layout.addWidget(self.add_button)
+        # Add widgets to layout
+        layout.addWidget(self.assistant_combo)
+        layout.addWidget(self.add_button)
+        layout.addWidget(self.remove_button)
 
-        self.setLayout(self.layout)
+        # Connect button signals
+        self.add_button.clicked.connect(self._handle_add)
+        self.remove_button.clicked.connect(self._handle_remove)
 
-        # Connect the add button to emit the signal
-        self.add_button.clicked.connect(self._on_add_clicked)
+    def add_assistant(self, name: str):
+        """Add assistant to selector"""
+        if self.assistant_combo.findText(name) == -1:
+            self.assistant_combo.addItem(name)
+            self.remove_button.setEnabled(True)
 
-    def update_assistants(self, assistants):
-        self.assistant_combo.clear()
-        self.assistant_combo.addItems(assistants)
+    def remove_assistant(self, name: str):
+        """Remove assistant from selector"""
+        index = self.assistant_combo.findText(name)
+        if index != -1:
+            self.assistant_combo.removeItem(index)
+            if self.assistant_combo.count() == 0:
+                self.remove_button.setEnabled(False)
 
-    def _on_add_clicked(self):
-        selected = self.assistant_combo.currentText()
-        if selected:
-            self.assistant_selected.emit(selected)
+    def _handle_selection(self, name: str):
+        """Handle assistant selection"""
+        if name:
+            self.assistant_selected.emit(name)
+
+    def _handle_add(self):
+        """Handle add button click"""
+        current = self.assistant_combo.currentText()
+        if current:
+            self.event_bus.va_state_changed.emit(current, True)
+
+    def _handle_remove(self):
+        """Handle remove button click"""
+        current = self.assistant_combo.currentText()
+        if current:
+            self.event_bus.va_state_changed.emit(current, False)

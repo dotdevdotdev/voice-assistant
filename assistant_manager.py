@@ -1,9 +1,11 @@
-from PyQt6.QtCore import QObject, pyqtSignal, QMetaObject, Qt
+from PyQt6.QtCore import QObject, pyqtSignal, QMetaObject, Qt, Q_ARG, QThread, pyqtSlot
 import threading
 import time
 import logging
+import os
 from clipboard_listener import ClipboardListener
 from clipboard_thread import ClipboardThread
+from assistant import Assistant
 
 
 class AssistantManager(QObject):
@@ -42,13 +44,20 @@ class AssistantManager(QObject):
         self, name, voice_id=None, stability=None, similarity_boost=None
     ):
         try:
-            # Create assistant without passing the API key
+            # Create assistant
             assistant = Assistant(
                 name=name,
                 voice_id=voice_id,
                 stability=stability,
                 similarity_boost=similarity_boost,
             )
+
+            # Configure the assistant with API keys from environment only
+            assistant.configure(
+                elevenlabs_api_key=self.elevenlabs_api_key,
+                deepgram_api_key=os.getenv("DEEPGRAM_API_KEY"),
+            )
+
             self.assistants[name] = assistant
             return assistant
         except Exception as e:
@@ -86,35 +95,41 @@ class AssistantManager(QObject):
         self.voice_input_received.emit(voice_input)
 
     def start_voice_listening(self):
-        if not self.voice_listening_active:
+        """Start the voice listening thread"""
+        if not self.voice_listening_active:  # Changed condition
             self.voice_listening_active = True
-            self.voice_thread = threading.Thread(target=self.voice_listening_loop)
-            self.voice_thread.daemon = True
+            # Create and start thread without moving assistant
+            self.voice_thread = threading.Thread(target=self._voice_listening_loop)
+            self.voice_thread.daemon = True  # Make thread daemon
             self.voice_thread.start()
             self.logger.info("Voice listening thread started")
 
+    def _voice_listening_loop(self):
+        """Voice listening loop to run in the thread"""
+        print("Starting voice listening loop")  # Debug print
+        while self.voice_listening_active:
+            try:
+                print("Attempting to listen...")  # Debug print
+                text = self.assistant.listen()
+                if text:
+                    print(f"Got text: {text}")  # Debug print
+                    # Emit signal instead of using invokeMethod
+                    self.voice_input_received.emit(text)
+            except Exception as e:
+                self.logger.error(f"Error in voice listening: {e}")
+                time.sleep(0.1)  # Prevent tight loop on error
+        print("Voice listening loop ended")  # Debug print
+
     def stop_voice_listening(self):
+        """Stop the voice listening thread"""
         if self.voice_listening_active:
             self.voice_listening_active = False
             if self.voice_thread and self.voice_thread.is_alive():
-                self.voice_thread.join(timeout=5)
+                self.voice_thread.join(timeout=1)
             self.voice_thread = None
             self.logger.info("Voice listening stopped")
 
-    def voice_listening_loop(self):
-        while self.voice_listening_active:
-            try:
-                voice_input = self.assistant.listen()
-                if voice_input:
-                    self.process_user_input(voice_input)
-            except Exception as e:
-                self.logger.error(f"Error in voice listening: {e}")
-            time.sleep(0.1)
-
-    def set_output_to_cursor_active(self, active):
-        self.output_to_cursor_active = active
-        self.logger.info(f"Output to cursor active: {active}")
-
+    @pyqtSlot(str)  # Changed @Slot to @pyqtSlot
     def process_user_input(self, user_input):
         print(f"AssistantManager: Processing user input: {user_input}")
         if not user_input.strip():
@@ -159,9 +174,7 @@ class AssistantManager(QObject):
         self.logger.info(f"Processing clipboard content: {content}")
         if self.monitor_clipboard:
             self.logger.info("Clipboard monitoring is active")
-            self.chat_window.display_message(
-                content, role="clipboard"
-            )  # Updated method name
+            self.chat_window.display_message(content, role="clipboard")
             self.assistant.speak(content)
         else:
             self.logger.info("Clipboard monitoring is not active")
@@ -172,3 +185,8 @@ class AssistantManager(QObject):
             self.clipboard_thread.start()
         else:
             self.clipboard_thread.stop()
+
+    def set_output_to_cursor_active(self, active):
+        """Toggle cursor output on/off"""
+        self.output_to_cursor_active = active
+        self.logger.info(f"Output to cursor active: {active}")

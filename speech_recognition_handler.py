@@ -1,40 +1,51 @@
 import speech_recognition as sr
-from deepgram import Deepgram
+import logging
+from deepgram import DeepgramClient
 import asyncio
 import os
+import io
+
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 async def transcribe_audio(audio_data):
+    """
+    Transcribe audio using Deepgram
+    """
     try:
-        # Attempt to transcribe with Deepgram
-        dg_client = Deepgram(os.getenv("DEEPGRAM_API_KEY"))
+        # Initialize Deepgram client
+        deepgram = DeepgramClient(os.getenv("DEEPGRAM_API_KEY"))
 
-        # Convert AudioData to bytes
-        audio_bytes = audio_data.get_raw_data()
+        # Get the raw WAV data as bytes
+        wav_data = audio_data.get_wav_data()
 
-        source = {"buffer": audio_bytes, "mimetype": "audio/raw"}
-        response = await dg_client.transcription.prerecorded(
-            source,
+        # Create a BytesIO object
+        buffer = io.BytesIO(wav_data)
+
+        # Use the current Deepgram API with the buffer
+        response = await deepgram.listen.prerecorded.v("1").transcribe(
+            buffer,
             {
-                "punctuate": True,
-                "encoding": "linear16",
-                "sample_rate": audio_data.sample_rate,
+                "smart_format": True,
+                "model": "nova",
+                "language": "en",
+                "mimetype": "audio/wav",
             },
         )
-        return response["results"]["channels"][0]["alternatives"][0]["transcript"]
-    except Exception as e:
-        logging.error(f"Error transcribing with Deepgram: {str(e)}")
 
-        # Fallback to Google Speech Recognition
-        recognizer = sr.Recognizer()
-        try:
-            return recognizer.recognize_google(audio_data)
-        except sr.UnknownValueError:
-            return "Google Speech Recognition could not understand audio"
-        except sr.RequestError as e:
-            return (
-                f"Could not request results from Google Speech Recognition service; {e}"
-            )
+        # Extract transcription from the response
+        transcript = response["results"]["channels"][0]["alternatives"][0]["transcript"]
+
+        return transcript
+
+    except Exception as e:
+        logger.error(f"Error in transcribe_audio: {str(e)}")
+        raise
 
 
 # Function to be called from your main loop

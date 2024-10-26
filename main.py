@@ -1,22 +1,18 @@
 import sys
 import os
 import yaml
-import pyautogui
-import time  # Add this import
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QThread
-from ui import MainWindow, ChatWindow
-from assistant import Assistant
-from assistant_manager import AssistantManager
-from clipboard_listener import ClipboardListener
-import argparse
 import logging
 import copy
 import atexit
 from pathlib import Path
-from application import Application
-from ui.styles import GLOBAL_STYLE  # Add this import at the top
-from settings import Settings
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer, QThread
+from ui import MainWindow, ChatWindow
+from va_manager import VAManager
+from audio_manager import AudioManager
+from event_bus import EventBus
+from manager_registry import ManagerRegistry
+# from dotenv import load_dotenv
 
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -127,138 +123,135 @@ def load_va_configs():
     return va_configs
 
 
-def create_assistant_manager(va_name, va_settings, chat_window):
-    # Get API keys from environment
-    elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
-    deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
-
-    # Create assistant with only the required parameters
-    assistant = Assistant(
-        name=va_name,
-        voice_id=va_settings.get("elevenlabs", {}).get("voice_id"),
-        stability=va_settings.get("elevenlabs", {})
-        .get("voice_settings", {})
-        .get("stability"),
-        similarity_boost=va_settings.get("elevenlabs", {})
-        .get("voice_settings", {})
-        .get("similarity_boost"),
-    )
-
-    # Create manager with the API keys
-    assistant_manager = AssistantManager(
-        assistant=assistant,
-        va_name=va_name,
-        username=va_settings.get("user", {}).get("username"),
-        elevenlabs_api_key=elevenlabs_api_key,
-    )
-
-    # Add the assistant to the participants list
-    chat_window.add_participant(va_name)
-
-    assistant_manager.set_chat_window(chat_window)
-    # Change this line to start with AI disabled
-    assistant_manager.set_send_to_ai_active(False)
-
-    return assistant_manager
-
-
 def cleanup():
     logging.info("Performing cleanup tasks...")
-    for manager in assistant_managers:
-        try:
-            manager.clipboard_thread.stop()
-            manager.assistant.pyaudio.terminate()
-        except Exception as e:
-            logging.error(f"Error during cleanup for manager: {e}")
+    if hasattr(QApplication.instance(), "activeWindow"):
+        main_window = QApplication.instance().activeWindow()
+        if hasattr(main_window, "va_manager") and main_window.va_manager:
+            try:
+                main_window.va_manager.cleanup_current_va()
+            except Exception as e:
+                logging.error(f"Error during cleanup: {e}")
     logging.info("Cleanup completed.")
 
 
-def main():
-    global main_window, assistant_managers, app_settings
+class Application:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("Starting application initialization")
 
-    # Handle app settings
-    app_settings_path = Path("app-settings.yaml")
-    default_app_settings = load_default_app_settings()
+        # Initialize Qt Application
+        self.logger.debug("Creating QApplication")
+        self.app = QApplication(sys.argv)
+        self.logger.debug("QApplication created")
 
-    if app_settings_path.exists():
-        app_settings = load_settings(str(app_settings_path), default_app_settings)
-    else:
-        app_settings = default_app_settings
-        save_settings(app_settings, app_settings_path)
-        logging.info("Created default app-settings.yaml file")
+        # Initialize singletons
+        self.logger.debug("Initializing EventBus")
+        self.event_bus = EventBus.get_instance()
+        self.logger.debug("EventBus initialized")
 
-    # Verify API keys
-    required_keys = ["OPENAI_API_KEY", "ELEVENLABS_API_KEY", "DEEPGRAM_API_KEY"]
-    missing_keys = [key for key in required_keys if not os.getenv(key)]
-    if missing_keys:
-        logging.error(
-            f"Error: Missing required environment variables: {', '.join(missing_keys)}"
-        )
-        sys.exit(1)
+        self.logger.debug("Initializing ManagerRegistry")
+        self.registry = ManagerRegistry.get_instance()
+        self.logger.debug("ManagerRegistry initialized")
 
-    # Create data directory
-    data_dir = os.path.join(os.getcwd(), "data")
-    os.makedirs(data_dir, exist_ok=True)
+        # Load configurations
+        self.logger.debug("Loading configurations")
+        self.app_settings = load_default_app_settings()
+        self.va_configs = load_va_configs()
+        self.logger.debug("Configurations loaded")
 
-    # Initialize application
-    app = QApplication(sys.argv)
-    app.setStyleSheet(GLOBAL_STYLE)  # Add this line to apply the global style
-
-    main_window = MainWindow()
-    main_window.assistant_managers = []
-    clipboard_listener = ClipboardListener()
-    assistant_managers = main_window.assistant_managers
-
-    # Create single chat window
-    chat_window = ChatWindow("Multi-Assistant Chat")
-    main_window.setCentralWidget(chat_window)
-
-    # Store chat_window reference
-    main_window.chat_window = chat_window
-
-    # Initialize assistant managers list
-    main_window.assistant_managers = []
-    assistant_managers = main_window.assistant_managers
-
-    # Add a small delay before creating assistant managers
-    QTimer.singleShot(1000, lambda: initialize_assistants(chat_window))
-
-    # Add test message to verify display works
-    QTimer.singleShot(
-        2000,
-        lambda: chat_window.display_message(
-            "Welcome to the chat!", role="assistant", va_name="System"
-        ),
-    )
-
-    main_window.show()
-    atexit.register(cleanup)
-    sys.exit(app.exec())
-
-
-def initialize_assistants(chat_window):
-    """Initialize assistant managers with a delay"""
-    va_configs = load_va_configs()
-
-    # Update assistant selector with available assistants
-    chat_window.assistant_selector.update_assistants(va_configs.keys())
-
-    # Connect the add button
-    chat_window.assistant_selector.add_button.clicked.connect(
-        lambda: add_selected_assistant(chat_window, va_configs)
-    )
-
-
-def add_selected_assistant(chat_window, va_configs):
-    selected = chat_window.assistant_selector.assistant_combo.currentText()
-    if selected and selected in va_configs:
+        # Initialize managers first - with defensive programming
+        self.audio_manager = None
         try:
-            assistant_manager = create_assistant_manager(
-                selected, va_configs[selected], chat_window
-            )
-            assistant_managers.append(assistant_manager)
+            self.logger.debug("Initializing AudioManager")
+            self.audio_manager = AudioManager()
+            self.logger.debug("AudioManager initialized successfully")
+            # Give the event loop a chance to process
+            QApplication.processEvents()
         except Exception as e:
-            logging.error(f"Failed to create assistant manager for {selected}: {e}")
+            self.logger.error(f"Failed to initialize AudioManager: {e}", exc_info=True)
+            raise RuntimeError("AudioManager initialization failed") from e
+
+        # Small delay to ensure audio system is stable
+        QThread.msleep(100)
+        QApplication.processEvents()
+
+        # Initialize UI after managers
+        self.chat_window = None
+        try:
+            self.logger.debug("Creating ChatWindow")
+            self.chat_window = ChatWindow()
+            self.logger.debug("ChatWindow created successfully")
+        except Exception as e:
+            self.logger.error(f"Error creating ChatWindow: {e}", exc_info=True)
+            if self.audio_manager:
+                self.audio_manager.cleanup()
+            raise RuntimeError("ChatWindow creation failed") from e
+
+        # Initialize VA manager last
+        self.va_manager = None
+        try:
+            self.logger.debug("Initializing VAManager")
+            self.va_manager = VAManager(self.chat_window, self.va_configs)
+            self.logger.debug("VAManager initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Error initializing VAManager: {e}", exc_info=True)
+            if self.audio_manager:
+                self.audio_manager.cleanup()
+            raise RuntimeError("VAManager initialization failed") from e
+
+        # Register managers
+        self.logger.debug("Registering managers")
+        self.registry.audio_manager = self.audio_manager
+        self.registry.va_manager = self.va_manager
+        self.logger.debug("Managers registered")
+
+        # Connect signals
+        try:
+            self.logger.debug("Connecting signals")
+            self._connect_signals()
+            self.logger.debug("Signals connected successfully")
+        except Exception as e:
+            self.logger.error(f"Error connecting signals: {e}", exc_info=True)
+            self.cleanup()
+            raise RuntimeError("Signal connection failed") from e
+
+        # Register cleanup
+        atexit.register(self.cleanup)
+
+        # Show UI
+        self.logger.debug("Showing ChatWindow")
+        self.chat_window.show()
+        self.logger.info("Application initialization complete")
+
+    def _connect_signals(self):
+        """Connect global application signals"""
+        self.logger.debug("Connecting window close signal")
+        self.chat_window.closing.connect(self.cleanup)
+
+        self.logger.debug("Connecting voice input toggle")
+        self.chat_window.voice_input_toggled.connect(
+            self.audio_manager.set_listening_state
+        )
+
+    def cleanup(self):
+        """Cleanup application resources"""
+        self.logger.info("Cleaning up application resources...")
+        self.audio_manager.cleanup()
+        self.va_manager.cleanup()
+
+    def run(self):
+        """Run the application"""
+        return self.app.exec()
+
+
+def main():
+    try:
+        app = Application()
+        sys.exit(app.run())
+    except Exception as e:
+        logging.critical("Fatal error during application startup", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
@@ -273,5 +266,4 @@ if __name__ == "__main__":
         save_settings(app_settings, app_settings_path)
         logging.info("Created default app-settings.yaml file")
 
-    # Just call the main() function which already has the working QApplication setup
     main()
