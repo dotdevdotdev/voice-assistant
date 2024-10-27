@@ -39,34 +39,76 @@ class AppConfig:
             try:
                 with open(config_path, "r") as f:
                     config_dict = yaml.safe_load(f)
-                config = cls(
-                    audio=ModuleConfig(
-                        provider_type=config_dict["audio"]["provider"],
-                        config=config_dict["audio"].get("config", {}),
-                    ),
-                    speech=ModuleConfig(
-                        provider_type=config_dict["speech"]["provider"],
-                        config=config_dict["speech"].get("config", {}),
-                    ),
-                    assistant=ModuleConfig(
-                        provider_type=config_dict["assistant"]["provider"],
-                        config=config_dict["assistant"].get("config", {}),
-                    ),
-                    clipboard=ModuleConfig(
-                        provider_type=config_dict["clipboard"]["provider"],
-                        config=config_dict["clipboard"].get("config", {}),
-                    ),
-                    ui=config_dict.get("ui", {}),
-                    assistants=assistants,
-                )
+                    print(f"Loading config from: {os.path.abspath(config_path)}")
+                    print(f"Raw config contents: {config_dict}")
+
+                    # Get the speech provider settings
+                    speech_dict = config_dict.get("speech", {})
+                    speech_provider = speech_dict.get("provider")
+                    print(f"Found speech provider: {speech_provider}")
+
+                    # Get the speech config
+                    speech_config = speech_dict.get("config", {})
+                    if speech_provider:
+                        speech_config = speech_dict.get("config", {}).get(
+                            speech_provider, {}
+                        )
+                    print(f"Speech config: {speech_config}")
+
+                    # Get audio settings
+                    audio_dict = config_dict.get("audio", {})
+                    audio_config = audio_dict.get("config", {})
+
+                    # Get app settings
+                    app_settings = config_dict.get("app", {})
+                    if app_settings:
+                        # Add device settings to audio config
+                        audio_config["input_device"] = app_settings.get("input_device")
+                        audio_config["output_device"] = app_settings.get(
+                            "output_device"
+                        )
+                    print(f"Audio config with devices: {audio_config}")
+
+                    config = cls(
+                        audio=ModuleConfig(
+                            provider_type=audio_dict.get("provider", "pyaudio"),
+                            config=audio_config,
+                        ),
+                        speech=ModuleConfig(
+                            provider_type=speech_provider or "whisper",
+                            config=speech_config,
+                        ),
+                        assistant=ModuleConfig(
+                            provider_type=config_dict.get("assistant", {}).get(
+                                "provider", "anthropic"
+                            ),
+                            config=config_dict.get("assistant", {}).get("config", {}),
+                        ),
+                        clipboard=ModuleConfig(
+                            provider_type=config_dict.get("clipboard", {}).get(
+                                "provider", "qt"
+                            ),
+                            config=config_dict.get("clipboard", {}).get("config", {}),
+                        ),
+                        ui=config_dict.get("ui", {}),
+                        assistants=assistants,
+                    )
+                    print(
+                        f"Created config object with speech provider: {config.speech.provider_type}"
+                    )
+                    print(f"Speech config: {config.speech.config}")
+
             except Exception as e:
-                print(f"Error loading config: {e}, using defaults")
+                print(f"Error loading config from {config_path}: {e}")
+                import traceback
+
+                traceback.print_exc()
                 config = None
 
         if config is None:
+            print(f"Using default config (failed to load {config_path})")
             config = cls.get_default_config()
             config.assistants = assistants
-            # Ensure we write the default config to file
             config.save(config_path)
             print(f"Created default configuration at {config_path}")
 
@@ -99,9 +141,28 @@ class AppConfig:
         return AppConfig(
             audio=ModuleConfig(
                 provider_type="pyaudio",
-                config={"sample_rate": 16000, "channels": 1, "chunk_size": 1024},
+                config={
+                    "sample_rate": 16000,
+                    "channels": 1,
+                    "chunk_size": 1024,
+                    "input_device": None,  # Will be set to system default
+                    "output_device": None,  # Will be set to system default
+                },
             ),
-            speech=ModuleConfig(provider_type="whisper", config={}),
+            speech=ModuleConfig(
+                provider_type="whisper",
+                config={
+                    "whisper": {
+                        "model": "base",
+                    },
+                    "deepgram": {
+                        "model": "nova-2",
+                        "language": "en",
+                        "smart_format": True,
+                        "encoding": "linear16",
+                    },
+                },
+            ),
             assistant=ModuleConfig(provider_type="anthropic", config={}),
             clipboard=ModuleConfig(provider_type="qt", config={}),
             ui={"theme": "dark", "window_size": [800, 600]},

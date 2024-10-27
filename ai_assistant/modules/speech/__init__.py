@@ -1,5 +1,5 @@
 from enum import Enum
-from core.interfaces.speech import SpeechToTextProvider, TextToSpeechProvider
+from core.interfaces.speech import SpeechToTextProvider
 from .whisper_provider import WhisperProvider
 from .deepgram_provider import DeepgramProvider
 

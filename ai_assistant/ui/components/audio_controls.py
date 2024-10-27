@@ -62,8 +62,29 @@ class AudioControls(QWidget):
 
     def _load_devices(self):
         devices = self._provider.get_devices()
-        for device in devices:
-            self.device_combo.addItem(device["name"], device["id"])
+        default_device_name = None
+
+        # Get default device from config
+        try:
+            registry = ProviderRegistry.get_instance()
+            config = registry.get_provider_config(AudioInputProvider)
+            default_device_name = config.get("input_device")
+            print(f">>> Found default input device in config: {default_device_name}")
+        except Exception as e:
+            print(f"!!! Error getting default device from config: {e}")
+
+        # Add devices to combo box
+        default_index = 0
+        for i, device in enumerate(devices):
+            device_name = device["name"]
+            self.device_combo.addItem(device_name, device["id"])
+            if default_device_name and default_device_name in device_name:
+                default_index = i
+                print(f">>> Setting default device: {device_name}")
+
+        # Set default device if found
+        if self.device_combo.count() > 0:
+            self.device_combo.setCurrentIndex(default_index)
 
     def _on_device_changed(self, index: int):
         if index >= 0:

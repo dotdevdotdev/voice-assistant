@@ -82,13 +82,14 @@ class AssistantSelector(QWidget):
     async def _load_models(self):
         try:
             print("Loading available models...")
-            models = await self._provider.get_available_models()
+            # For Anthropic, we can hardcode the available models since they're fixed
+            models = ["claude-3-opus-20240229", "claude-3-sonnet-20240229"]
             print(f"Available models: {models}")
-            # Use Qt's thread-safe methods to update UI
+
+            # Update UI in the main thread
             for model in models:
-                print(f"Adding model to combo box: {model}")
-                # Need to ensure UI updates happen in the main thread
                 self.model_combo.addItem(str(model))
+
         except Exception as e:
             print(f"Error loading models: {e}")
             # Add a default model if loading fails

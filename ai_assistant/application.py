@@ -20,7 +20,9 @@ from qasync import QEventLoop  # Add this import
 
 
 class Application:
-    CONFIG_PATH = os.path.join("config", "app-settings.yaml")
+    CONFIG_PATH = (
+        "app-settings.yaml"  # Changed from os.path.join("config", "app-settings.yaml")
+    )
 
     def __init__(self):
         self.app = QApplication(sys.argv)
@@ -31,6 +33,9 @@ class Application:
         self.loop = QEventLoop(self.app)
         asyncio.set_event_loop(self.loop)
 
+        print(
+            f"Loading config from: {os.path.abspath(self.CONFIG_PATH)}"
+        )  # Debug print
         self.config = AppConfig.load(self.CONFIG_PATH)
         self._setup_event_handling()
 
@@ -45,15 +50,35 @@ class Application:
         """Initialize and register all providers"""
         try:
             # Audio provider
+            audio_config = self.config.audio.config.copy()
+
+            # Get app-level settings if they exist
+            app_settings = self.config.ui.get("app", {})
+            if isinstance(app_settings, dict):
+                print(f"Found app settings: {app_settings}")  # Debug print
+
+                # Add input/output device settings from app config if they exist
+                if "input_device" in app_settings:
+                    audio_config["input_device"] = app_settings["input_device"]
+                if "output_device" in app_settings:
+                    audio_config["output_device"] = app_settings["output_device"]
+
+            print(f"Final audio config: {audio_config}")  # Debug print
+
             audio_provider = create_audio_provider(self.config.audio.provider_type)
             self.registry.register_provider(
-                AudioInputProvider, audio_provider, self.config.audio.config
+                AudioInputProvider, audio_provider, audio_config
             )
 
-            # Speech provider
-            speech_provider = create_speech_provider(self.config.speech.provider_type)
+            # Speech provider - ensure we pass the correct provider-specific config
+            speech_provider_type = self.config.speech.provider_type
+            speech_config = self.config.speech.config.get(speech_provider_type, {})
+            print(f"Speech provider type: {speech_provider_type}")  # Debug print
+            print(f"Speech config: {speech_config}")  # Debug print
+
+            speech_provider = create_speech_provider(speech_provider_type)
             self.registry.register_provider(
-                SpeechToTextProvider, speech_provider, self.config.speech.config
+                SpeechToTextProvider, speech_provider, speech_config
             )
 
             # Assistant provider
@@ -71,6 +96,7 @@ class Application:
             self.registry.register_provider(ClipboardProvider, clipboard_provider)
 
         except Exception as e:
+            print(f"Error in _setup_providers: {e}")  # Debug print
             self.loop.call_soon(
                 lambda: self.loop.create_task(
                     self.event_bus.emit(Event(EventType.ERROR, error=e))
