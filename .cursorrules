@@ -188,5 +188,25 @@ MUST Define WebSocket event handlers as async functions when using async queues 
 MUST Use iscoroutinefunction to properly handle mixed sync/async callbacks in event systems
 MUST Maintain clear async boundaries between real-time audio capture and network services
 MUST Handle WebSocket connection lifecycle with proper async/await patterns
+
+# Deepgram-Specific Patterns
+
+MUST Create Deepgram WebSocket connections in two steps:
+
+1. Create live client: `live_client = client.listen.live.v("1")`
+2. Start connection without await: `connection = live_client.start(options)`
+   MUST Register event handlers on live client before starting connection
+   MUST Use sync event registration with async handlers:
+
+```python
+# Correct pattern:
+live_client = client.listen.live.v("1")
+async def on_message(msg): ...
+live_client.on("Results", on_message)
+connection = live_client.start(options)
+```
+
 NEVER Mix sync and async callbacks without explicit handling
 NEVER Use recursive event emission in error handlers
+NEVER Await the start() method of Deepgram WebSocket connections
+NEVER Register handlers after starting the connection

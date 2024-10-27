@@ -100,14 +100,14 @@ class ChatWindow(QMainWindow):
     def _on_recording_started(self):
         print("Recording started, disabling input area")
         self.input_area.setEnabled(False)
-        # Start the transcription process
-        self._start_transcription()
+        # Temporarily disable transcription
+        # self._start_transcription()
 
     def _on_recording_stopped(self):
         print("Recording stopped, enabling input area")
         self.input_area.setEnabled(True)
-        # Stop the transcription process
-        self._stop_transcription()
+        # Temporarily disable transcription
+        # self._stop_transcription()
 
     def _start_transcription(self):
         print("Starting transcription process")
@@ -141,20 +141,31 @@ class ChatWindow(QMainWindow):
         print("\n=== Starting transcription loop ===")
         try:
 
-            async def audio_stream() -> AsyncIterator[bytes]:
-                while True:
-                    if hasattr(self, "audio_provider"):
-                        try:
-                            chunk = self.audio_provider.read_chunk()
-                            print(f"Read audio chunk: {len(chunk)} bytes")
-                            yield chunk
-                        except Exception as e:
-                            print(f"!!! Error reading audio chunk: {e}")
-                    await asyncio.sleep(0.01)
+            class AudioStreamIterator:
+                def __init__(self, audio_provider):
+                    self.audio_provider = audio_provider
+
+                def __aiter__(
+                    self,
+                ):  # Remove async - __aiter__ should return self directly
+                    return self
+
+                async def __anext__(self):  # Keep this async
+                    try:
+                        chunk = self.audio_provider.read_chunk()
+                        if chunk:
+                            return chunk
+                        raise StopAsyncIteration
+                    except Exception as e:
+                        print(f"!!! Error reading audio chunk: {e}")
+                        raise StopAsyncIteration
 
             print("Starting transcription stream processing")
+            audio_iterator = AudioStreamIterator(self.audio_provider)
+
+            # Remove the await here - transcribe_stream returns an async generator
             async for transcription in self.speech_provider.transcribe_stream(
-                audio_stream()
+                audio_iterator
             ):
                 if transcription.strip():
                     print(f"\n>>> Transcription received in UI: '{transcription}'")
