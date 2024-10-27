@@ -4,9 +4,14 @@ from .components.message_view import MessageView
 from .components.input_area import InputArea
 from .components.assistant_selector import AssistantSelector
 from .components.audio_controls import AudioControls
-from core.interfaces.assistant import Message
+from core.interfaces.assistant import Message, AssistantProvider
+from core.interfaces.audio import AudioInputProvider  # Add this import
+from core.interfaces.speech import SpeechToTextProvider
 from utils.registry import ProviderRegistry
 from core.events import EventBus, Event, EventType
+import asyncio
+from typing import Optional, AsyncIterator
+from PyQt6.QtWidgets import QApplication
 
 
 class ChatWindow(QMainWindow):
@@ -93,10 +98,83 @@ class ChatWindow(QMainWindow):
         pass
 
     def _on_recording_started(self):
+        print("Recording started, disabling input area")
         self.input_area.setEnabled(False)
+        # Start the transcription process
+        self._start_transcription()
 
     def _on_recording_stopped(self):
+        print("Recording stopped, enabling input area")
         self.input_area.setEnabled(True)
+        # Stop the transcription process
+        self._stop_transcription()
+
+    def _start_transcription(self):
+        print("Starting transcription process")
+        try:
+            self.speech_provider = ProviderRegistry.get_instance().get_provider(
+                SpeechToTextProvider
+            )
+            self.audio_provider = ProviderRegistry.get_instance().get_provider(
+                AudioInputProvider
+            )
+
+            if self.speech_provider:
+                print("Found speech provider, setting up transcription stream")
+                # Get the current event loop
+                loop = asyncio.get_event_loop()
+                # Start the transcription task
+                self.transcription_task = loop.create_task(self._transcription_loop())
+            else:
+                print("No speech provider found!")
+        except Exception as e:
+            print(f"Error setting up transcription: {e}")
+
+    def _stop_transcription(self):
+        print("Stopping transcription process")
+        if hasattr(self, "transcription_task"):
+            self.transcription_task.cancel()
+            delattr(self, "transcription_task")
+
+    async def _transcription_loop(self):
+        """Process audio chunks and get transcriptions"""
+        print("\n=== Starting transcription loop ===")
+        try:
+
+            async def audio_stream() -> AsyncIterator[bytes]:
+                print("Starting audio stream generator")
+                while True:
+                    if hasattr(self, "audio_provider"):
+                        try:
+                            chunk = self.audio_provider.read_chunk()
+                            print(f"Read audio chunk: {len(chunk)} bytes")
+                            yield chunk
+                        except Exception as e:
+                            print(f"!!! Error reading audio chunk: {e}")
+                    await asyncio.sleep(0.01)  # Small delay to prevent busy loop
+
+            print("Starting transcription stream processing")
+            async for transcription in self.speech_provider.transcribe_stream(
+                audio_stream()
+            ):
+                if transcription.strip():
+                    print(f"\n>>> Transcription received in UI: '{transcription}'")
+
+                    # Update UI in thread-safe way
+                    try:
+                        print("Attempting to update UI...")
+                        self.input_area.text_edit.setPlainText(transcription)
+                        self.input_area.send_button.setEnabled(True)
+                        QApplication.instance().processEvents()
+                        print("UI successfully updated with transcription")
+                    except Exception as e:
+                        print(f"!!! Error updating UI: {e}")
+
+        except asyncio.CancelledError:
+            print(">>> Transcription loop cancelled")
+        except Exception as e:
+            print(f"!!! Error in transcription loop: {e}")
+            await self._event_bus.emit(Event(EventType.ERROR, error=e))
 
     def load_settings(self):
         geometry = self._settings.value("geometry")

@@ -13,25 +13,44 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
         self._config: Optional[AudioConfig] = None
         self._event_bus = EventBus.get_instance()
         self._playback_stream: Optional[pyaudio.Stream] = None
+        self._buffer_size = None
 
     def start_stream(self, config: AudioConfig) -> None:
         if self._stream is not None:
             self.stop_stream()
 
+        print(f"Starting audio stream with config: {config}")
+
+        # Use larger chunk size for the actual stream
+        self._buffer_size = config.chunk_size * 4
         self._config = config
-        self._stream = self._audio.open(
-            format=pyaudio.paFloat32,
-            channels=config.channels,
-            rate=config.sample_rate,
-            input=True,
-            input_device_index=config.device_id,
-            frames_per_buffer=config.chunk_size,
-        )
+
+        print(f"Using buffer size: {self._buffer_size}")
+
+        try:
+            self._stream = self._audio.open(
+                format=pyaudio.paFloat32,
+                channels=config.channels,
+                rate=config.sample_rate,
+                input=True,
+                input_device_index=config.device_id,
+                frames_per_buffer=self._buffer_size,
+                stream_callback=None,  # Ensure blocking mode
+            )
+            print("Audio stream opened successfully")
+        except Exception as e:
+            print(f"Error opening audio stream: {e}")
+            raise
 
     def read_chunk(self) -> bytes:
         if not self._stream:
             raise RuntimeError("Audio stream not started")
-        return self._stream.read(self._config.chunk_size)
+        try:
+            data = self._stream.read(self._buffer_size, exception_on_overflow=False)
+            return data
+        except Exception as e:
+            print(f"Error reading audio chunk: {e}")
+            raise
 
     def stop_stream(self) -> None:
         if self._stream:

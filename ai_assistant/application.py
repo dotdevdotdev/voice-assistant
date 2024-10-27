@@ -16,6 +16,7 @@ from core.interfaces.audio import AudioInputProvider
 from core.interfaces.speech import SpeechToTextProvider
 from core.interfaces.assistant import AssistantProvider
 from core.interfaces.clipboard import ClipboardProvider
+from qasync import QEventLoop  # Add this import
 
 
 class Application:
@@ -26,8 +27,9 @@ class Application:
         self.event_bus = EventBus.get_instance()
         self.registry = ProviderRegistry.get_instance()
 
-        # Set up asyncio integration first
-        self._setup_asyncio()
+        # Set up asyncio integration with Qt
+        self.loop = QEventLoop(self.app)
+        asyncio.set_event_loop(self.loop)
 
         self.config = AppConfig.load(self.CONFIG_PATH)
         self._setup_event_handling()
@@ -69,7 +71,6 @@ class Application:
             self.registry.register_provider(ClipboardProvider, clipboard_provider)
 
         except Exception as e:
-            # Use the event loop directly instead of create_task
             self.loop.call_soon(
                 lambda: self.loop.create_task(
                     self.event_bus.emit(Event(EventType.ERROR, error=e))
@@ -93,27 +94,9 @@ class Application:
             self.main_window = ChatWindow()
             self.main_window.show()
 
-            # Start the application
-            return self.app.exec()
+            # Start the event loop
+            return self.loop.run_forever()
 
         except Exception as e:
             print(f"Failed to start application: {e}", file=sys.stderr)
             return 1
-
-    def _setup_asyncio(self):
-        """Set up asyncio event loop integration with Qt"""
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-
-        # Create a timer to process asyncio events
-        self.async_timer = QTimer()
-        self.async_timer.timeout.connect(self._process_asyncio_events)
-        self.async_timer.start(10)  # 10ms interval
-
-    def _process_asyncio_events(self):
-        """Process pending asyncio events"""
-        try:
-            self.loop.stop()
-            self.loop.run_forever()
-        except Exception as e:
-            print(f"Error processing async events: {e}", file=sys.stderr)
