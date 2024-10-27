@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from core.interfaces.audio import AudioInputProvider, AudioConfig
+from core.interfaces.speech import SpeechToTextProvider
 from utils.registry import ProviderRegistry
 import numpy as np
 
@@ -110,12 +111,25 @@ class AudioControls(QWidget):
                 )
 
                 config = AudioConfig(
-                    sample_rate=sample_rate,  # Use device's sample rate directly
+                    sample_rate=sample_rate,
                     channels=1,
                     chunk_size=1024,
                     device_id=device_id,
                 )
                 print(f"Using audio config: {config}")
+
+                # Update the provider's config with actual sample rate
+                registry = ProviderRegistry.get_instance()
+                speech_provider = registry.get_provider(SpeechToTextProvider)
+                if hasattr(speech_provider, "configure"):
+                    current_config = registry.get_provider_config(SpeechToTextProvider)
+                    updated_config = current_config.copy()
+                    updated_config["sample_rate"] = sample_rate
+                    speech_provider.configure(updated_config)
+                    print(
+                        f"Updated speech provider config with sample rate: {sample_rate}"
+                    )
+
                 self._provider.start_stream(config)
                 print("Audio stream started successfully")
                 self._level_timer.start()

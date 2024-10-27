@@ -1,7 +1,7 @@
 from enum import Enum, auto
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
-from asyncio import Queue
+from typing import Any, Callable, Dict, List, Optional, Union, Awaitable
+from asyncio import Queue, iscoroutinefunction
 
 
 class EventType(Enum):
@@ -27,7 +27,10 @@ class EventBus:
     _instance = None
 
     def __init__(self):
-        self._subscribers: Dict[EventType, List[Callable]] = {}
+        self._subscribers: Dict[
+            EventType,
+            List[Union[Callable[[Event], None], Callable[[Event], Awaitable[None]]]],
+        ] = {}
         self._queue: Queue[Event] = Queue()
 
     @classmethod
@@ -54,9 +57,13 @@ class EventBus:
         if event.type in self._subscribers:
             for callback in self._subscribers[event.type]:
                 try:
-                    callback(event)
+                    if iscoroutinefunction(callback):
+                        await callback(event)
+                    else:
+                        callback(event)
                 except Exception as e:
-                    await self.emit(Event(EventType.ERROR, error=e))
+                    # Log the error instead of recursive emit
+                    print(f"Error in event callback: {e}")
 
     async def get_event(self) -> Event:
         return await self._queue.get()

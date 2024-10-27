@@ -181,3 +181,12 @@ if np.max(np.abs(audio_data)) > 1.0:
 # Resample to target rate
 resampled = signal.resample(audio_data, target_length)
 ```
+
+## Async/Await Best Practices
+
+MUST Define WebSocket event handlers as async functions when using async queues or event buses
+MUST Use iscoroutinefunction to properly handle mixed sync/async callbacks in event systems
+MUST Maintain clear async boundaries between real-time audio capture and network services
+MUST Handle WebSocket connection lifecycle with proper async/await patterns
+NEVER Mix sync and async callbacks without explicit handling
+NEVER Use recursive event emission in error handlers

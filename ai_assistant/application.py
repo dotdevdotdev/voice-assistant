@@ -55,7 +55,7 @@ class Application:
             # Get app-level settings if they exist
             app_settings = self.config.ui.get("app", {})
             if isinstance(app_settings, dict):
-                print(f"Found app settings: {app_settings}")  # Debug print
+                print(f"Found app settings: {app_settings}")
 
                 # Add input/output device settings from app config if they exist
                 if "input_device" in app_settings:
@@ -63,7 +63,7 @@ class Application:
                 if "output_device" in app_settings:
                     audio_config["output_device"] = app_settings["output_device"]
 
-            print(f"Final audio config: {audio_config}")  # Debug print
+            print(f"Final audio config: {audio_config}")
 
             audio_provider = create_audio_provider(self.config.audio.provider_type)
             self.registry.register_provider(
@@ -72,11 +72,13 @@ class Application:
 
             # Speech provider - ensure we pass the correct provider-specific config
             speech_provider_type = self.config.speech.provider_type
-            speech_config = self.config.speech.config.get(speech_provider_type, {})
-            print(f"Speech provider type: {speech_provider_type}")  # Debug print
-            print(f"Speech config: {speech_config}")  # Debug print
+            speech_config = self.config.speech.config
+            print(f"Speech provider type: {speech_provider_type}")
+            print(f"Speech config: {speech_config}")
 
-            speech_provider = create_speech_provider(speech_provider_type)
+            speech_provider = create_speech_provider(
+                speech_provider_type, speech_config
+            )
             self.registry.register_provider(
                 SpeechToTextProvider, speech_provider, speech_config
             )

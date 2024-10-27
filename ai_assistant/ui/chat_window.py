@@ -142,7 +142,6 @@ class ChatWindow(QMainWindow):
         try:
 
             async def audio_stream() -> AsyncIterator[bytes]:
-                print("Starting audio stream generator")
                 while True:
                     if hasattr(self, "audio_provider"):
                         try:
@@ -151,7 +150,7 @@ class ChatWindow(QMainWindow):
                             yield chunk
                         except Exception as e:
                             print(f"!!! Error reading audio chunk: {e}")
-                    await asyncio.sleep(0.01)  # Small delay to prevent busy loop
+                    await asyncio.sleep(0.01)
 
             print("Starting transcription stream processing")
             async for transcription in self.speech_provider.transcribe_stream(
