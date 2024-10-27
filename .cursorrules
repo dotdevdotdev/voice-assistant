@@ -137,6 +137,54 @@ Example buffer size configuration:
 self._buffer_size = config.chunk_size * 4
 ```
 
+## Audio Stream Shutdown
+
+MUST Follow exact shutdown sequence:
+
+- Set stop flag first
+- Process all buffered data using get_read_available()
+- Stop stream only after buffer empty
+- Close stream and cleanup resources
+- Reset all state flags
+
+Example proper shutdown:
+
+```python
+# First set flags
+self._stop_requested = True
+self._is_processing = True
+
+# Process remaining buffer
+while self._stream.is_active() and self._stream.get_read_available() > 0:
+    data = self._stream.read(chunk_size, exception_on_overflow=False)
+    if data:
+        process_and_store_audio(data)
+
+# Only then stop stream
+self._stream.stop_stream()
+self._stream.close()
+```
+
+## Audio Buffer Processing
+
+MUST Process all buffered audio before stream closure
+MUST Use consistent sample rate throughout processing
+MUST Maintain audio quality during shutdown
+MUST Log buffer metrics during processing
+MUST Handle all exceptions during buffer processing
+MUST Reset state in finally block
+MUST Clean up resources on error
+MUST Maintain consistent state after errors
+
+## Audio Stream Pitfalls
+
+NEVER Stop stream before processing remaining buffer
+NEVER Discard buffered audio data during shutdown
+NEVER Close stream while data is still available
+NEVER Skip audio processing during shutdown
+NEVER Mix buffer sizes during processing
+NEVER Leave streams open after errors
+
 ## Logging Conventions
 
 - MUST Use logging prefixes for clarity:
