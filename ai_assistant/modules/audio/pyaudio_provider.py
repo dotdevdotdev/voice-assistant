@@ -5,6 +5,7 @@ from core.interfaces.audio import AudioInputProvider, AudioOutputProvider, Audio
 import io
 import struct
 import traceback  # Add this import
+import numpy as np
 
 
 class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
@@ -14,7 +15,8 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
         self._playback_stream = None
         self._config = None
         self._recorded_frames = []
-        self._output_device_id = None  # Add this to store output device ID
+        self._output_device_id = None
+        self._min_recording_length = 2.0  # Minimum recording length in seconds
         print(">>> PyAudio initialized")
 
     def start_stream(self, config: AudioConfig) -> None:
@@ -30,13 +32,15 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
             sample_format = pyaudio.paInt16
             channels = 1
             fs = int(device_info["defaultSampleRate"])
-            chunk = 1024
+            # Increase chunk size for more stable recording
+            chunk = 2048  # Doubled from 1024
 
             print(f"Device: {device_info['name']}")
             print(f"Format: {sample_format}")
             print(f"Channels: {channels}")
             print(f"Rate: {fs}")
             print(f"Chunk: {chunk}")
+            print(f"Min recording length: {self._min_recording_length}s")
 
             self._stream = self._audio.open(
                 format=sample_format,
@@ -53,7 +57,7 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
                 "rate": fs,
                 "chunk": chunk,
             }
-            self._recorded_frames = []  # Clear any previous recording
+            self._recorded_frames = []
             print(">>> Stream opened successfully")
 
         except Exception as e:
@@ -69,7 +73,12 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
 
         try:
             data = self._stream.read(self._config["chunk"], exception_on_overflow=False)
-            if data:  # Only append if we got data
+            if data:
+                # Amplify the audio data
+                audio_data = np.frombuffer(data, dtype=np.int16)
+                # Amplify by 5x (adjust this value as needed)
+                audio_data = np.clip(audio_data * 5, -32768, 32767).astype(np.int16)
+                data = audio_data.tobytes()
                 self._recorded_frames.append(data)
             return data
         except Exception as e:
@@ -83,7 +92,27 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
             try:
                 self._stream.stop_stream()
                 self._stream.close()
-                print(f">>> Recorded {len(self._recorded_frames)} frames")
+
+                # Calculate recording length
+                total_samples = len(self._recorded_frames) * self._config["chunk"]
+                recording_length = total_samples / self._config["rate"]
+                print(f">>> Recording length: {recording_length:.2f}s")
+
+                # Pad recording if too short
+                if recording_length < self._min_recording_length:
+                    samples_needed = int(
+                        (self._min_recording_length * self._config["rate"])
+                        - total_samples
+                    )
+                    if samples_needed > 0:
+                        padding = np.zeros(samples_needed, dtype=np.int16).tobytes()
+                        self._recorded_frames.append(padding)
+                        print(f">>> Added {samples_needed} samples of padding")
+
+                print(
+                    f">>> Final recording length: {len(self._recorded_frames) * self._config['chunk'] / self._config['rate']:.2f}s"
+                )
+
             except Exception as e:
                 print(f"!!! Error stopping stream: {e}")
             finally:
@@ -117,68 +146,56 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
                 except Exception as e:
                     print(f"!!! Warning: Could not get complete device info: {e}")
 
-            # If audio_data is provided, play that instead of recorded frames
+            # Create WAV buffer for either input source
+            wav_buffer = io.BytesIO()
+
             if audio_data is not None:
-                print(">>> Playing from provided audio data")
-                with wave.open(audio_data, "rb") as wf:
-                    print(f">>> WAV details:")
-                    print(f"    Channels: {wf.getnchannels()}")
-                    print(f"    Sample width: {wf.getsampwidth()}")
-                    print(f"    Frame rate: {wf.getframerate()}")
-                    print(f"    Frames: {wf.getnframes()}")
-
-                    # Create stream with debug info
-                    print(">>> Creating playback stream...")
-
-                    # Get device sample rate
-                    device_info = self._audio.get_device_info_by_index(
-                        self._output_device_id
-                    )
-                    device_rate = int(device_info["defaultSampleRate"])
-
-                    # Open stream with device's native sample rate
-                    self._playback_stream = self._audio.open(
-                        format=self._audio.get_format_from_width(wf.getsampwidth()),
-                        channels=wf.getnchannels(),
-                        rate=device_rate,  # Use device's native rate
-                        output=True,
-                        output_device_index=self._output_device_id,
-                        frames_per_buffer=1024,
-                    )
-                    print(f">>> Playback stream created with rate: {device_rate}Hz")
-
-                    # Read first chunk and check data
-                    chunk = 1024
-                    data = wf.readframes(chunk)
-                    print(f">>> First chunk size: {len(data)} bytes")
-                    if len(data) > 0:
-                        # Check if data contains non-zero values
-                        sample_values = struct.unpack(f"<{len(data)//2}h", data)
-                        max_value = max(
-                            abs(min(sample_values)), abs(max(sample_values))
-                        )
-                        print(f">>> Max audio value in first chunk: {max_value}")
-
-                        # Play the audio
-                        print(">>> Starting playback...")
-                        total_bytes = 0
-                        while len(data) > 0:
-                            self._playback_stream.write(data)
-                            total_bytes += len(data)
-                            data = wf.readframes(chunk)
-                        print(f">>> Finished writing {total_bytes} bytes")
-
-                    else:
-                        print("!!! Warning: No data in first chunk")
-
+                # Using provided audio data (test sound)
+                print(">>> Using provided audio data")
+                wav_buffer.write(audio_data.read())
+                wav_buffer.seek(0)
+            elif self._recorded_frames and self._config:
+                # Using recorded frames
+                print(f">>> Using {len(self._recorded_frames)} recorded frames")
+                with wave.open(wav_buffer, "wb") as wf:
+                    wf.setnchannels(self._config["channels"])
+                    wf.setsampwidth(self._audio.get_sample_size(self._config["format"]))
+                    wf.setframerate(self._config["rate"])
+                    wf.writeframes(b"".join(self._recorded_frames))
+                wav_buffer.seek(0)
             else:
                 print("!!! No audio data to play")
                 return
 
-            # Make sure the last bit of audio is played
-            if self._playback_stream:
-                self._playback_stream.stop_stream()
-                print(">>> Stream stopped")
+            # Play the audio
+            with wave.open(wav_buffer, "rb") as wf:
+                print(f">>> WAV details:")
+                print(f"    Channels: {wf.getnchannels()}")
+                print(f"    Sample width: {wf.getsampwidth()}")
+                print(f"    Frame rate: {wf.getframerate()}")
+                print(f"    Frames: {wf.getnframes()}")
+
+                # Create playback stream
+                self._playback_stream = self._audio.open(
+                    format=self._audio.get_format_from_width(wf.getsampwidth()),
+                    channels=wf.getnchannels(),
+                    rate=wf.getframerate(),
+                    output=True,
+                    output_device_index=self._output_device_id,
+                    frames_per_buffer=1024,
+                )
+
+                # Read and play chunks
+                chunk = 1024
+                data = wf.readframes(chunk)
+                total_bytes = 0
+
+                while len(data) > 0:
+                    self._playback_stream.write(data)
+                    total_bytes += len(data)
+                    data = wf.readframes(chunk)
+
+                print(f">>> Played {total_bytes} bytes")
 
             self.stop_playback()
             print(">>> Playback completed")
