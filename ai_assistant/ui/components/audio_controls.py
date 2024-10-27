@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QLabel,
     QProgressBar,
+    QApplication,  # Add this import
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from core.interfaces.audio import AudioInputProvider, AudioConfig
@@ -268,7 +269,10 @@ class AudioControls(QWidget):
     def _on_record_clicked(self, checked: bool):
         self._recording = checked
         self.record_button.setText("Stop Recording" if checked else "Start Recording")
-        self.play_button.setEnabled(not checked)
+
+        # Disable buttons during recording and processing
+        self.play_button.setEnabled(False)
+        self.test_sound_button.setEnabled(False)
 
         if checked:
             print("\n=== Starting audio recording ===")
@@ -295,15 +299,33 @@ class AudioControls(QWidget):
                 print(traceback.format_exc())
                 self._recording = False
                 self.record_button.setChecked(False)
+                self.play_button.setEnabled(True)
+                self.test_sound_button.setEnabled(True)
                 return
         else:
-            print("\n=== Stopping audio recording ===")
+            print("\n=== Requesting recording stop ===")
             self._level_timer.stop()
-            self._provider.stop_stream()
             self.level_indicator.setValue(0)
-            self._save_recording()  # Save the recording automatically
+
+            # Disable all controls during processing
+            self.record_button.setEnabled(False)
+            self.play_button.setEnabled(False)
+            self.test_sound_button.setEnabled(False)
+
+            # Stop the stream and wait for processing
+            self._provider.stop_stream()
+
+            # Wait for processing to complete
+            while self._provider.is_processing():
+                QApplication.processEvents()  # Keep UI responsive
+
+            self._save_recording()  # Save the recording
             self.recording_stopped.emit()
+
+            # Re-enable controls
+            self.record_button.setEnabled(True)
             self.play_button.setEnabled(True)
+            self.test_sound_button.setEnabled(True)
 
     def _on_play_clicked(self):
         print("\n=== Playing recorded audio ===")

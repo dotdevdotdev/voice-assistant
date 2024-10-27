@@ -6,6 +6,7 @@ import io
 import struct
 import traceback  # Add this import
 import numpy as np
+import time
 
 
 class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
@@ -16,8 +17,14 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
         self._config = None
         self._recorded_frames = []
         self._output_device_id = None
-        self._min_recording_length = 2.0  # Minimum recording length in seconds
+        self._is_processing = False
+        self._stop_requested = False  # Add flag for graceful shutdown
+        self._min_recording_length = 2.0
         print(">>> PyAudio initialized")
+
+    def is_processing(self) -> bool:
+        """Return True if still processing audio data"""
+        return self._is_processing
 
     def start_stream(self, config: AudioConfig) -> None:
         """Start recording audio stream"""
@@ -72,52 +79,92 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
             raise RuntimeError("Stream not started")
 
         try:
+            # Check if stop was requested
+            if self._stop_requested:
+                return b""
+
+            # Read data from stream
             data = self._stream.read(self._config["chunk"], exception_on_overflow=False)
             if data:
-                # Amplify the audio data
+                # Convert to numpy array for processing
                 audio_data = np.frombuffer(data, dtype=np.int16)
-                # Amplify by 5x (adjust this value as needed)
+
+                # Amplify the audio
                 audio_data = np.clip(audio_data * 5, -32768, 32767).astype(np.int16)
-                data = audio_data.tobytes()
-                self._recorded_frames.append(data)
+                amplified_data = audio_data.tobytes()
+
+                # Store the amplified chunk
+                self._recorded_frames.append(amplified_data)
+
+                # Log progress periodically
+                if len(self._recorded_frames) % 100 == 0:
+                    duration = (
+                        len(self._recorded_frames)
+                        * self._config["chunk"]
+                        / self._config["rate"]
+                    )
+                    max_value = np.max(np.abs(audio_data))
+                    print(
+                        f">>> Recording duration: {duration:.1f}s (max level: {max_value})"
+                    )
+
+                return amplified_data
             return data
         except Exception as e:
             print(f"!!! Error reading chunk: {e}")
             raise
 
     def stop_stream(self) -> None:
-        """Stop the audio stream"""
-        print("\n=== Stopping audio stream ===")
-        if self._stream:
-            try:
-                self._stream.stop_stream()
-                self._stream.close()
+        """Request to stop the audio stream and wait for processing to complete"""
+        print("\n=== Stop recording requested ===")
 
-                # Calculate recording length
-                total_samples = len(self._recorded_frames) * self._config["chunk"]
-                recording_length = total_samples / self._config["rate"]
-                print(f">>> Recording length: {recording_length:.2f}s")
+        try:
+            # First, just set the stop flag but keep processing
+            self._stop_requested = True
+            self._is_processing = True
+            print(">>> Processing remaining audio data...")
 
-                # Pad recording if too short
-                if recording_length < self._min_recording_length:
-                    samples_needed = int(
-                        (self._min_recording_length * self._config["rate"])
-                        - total_samples
-                    )
-                    if samples_needed > 0:
-                        padding = np.zeros(samples_needed, dtype=np.int16).tobytes()
-                        self._recorded_frames.append(padding)
-                        print(f">>> Added {samples_needed} samples of padding")
+            if self._stream:
+                # Keep reading remaining data in the stream buffer
+                while (
+                    self._stream.is_active() and self._stream.get_read_available() > 0
+                ):
+                    try:
+                        data = self._stream.read(
+                            self._config["chunk"], exception_on_overflow=False
+                        )
+                        if data:
+                            # Process any remaining audio data
+                            audio_data = np.frombuffer(data, dtype=np.int16)
+                            audio_data = np.clip(audio_data * 5, -32768, 32767).astype(
+                                np.int16
+                            )
+                            self._recorded_frames.append(audio_data.tobytes())
+                        else:
+                            break
+                    except Exception as e:
+                        print(f"!!! Warning: Error reading final chunks: {e}")
+                        break
 
-                print(
-                    f">>> Final recording length: {len(self._recorded_frames) * self._config['chunk'] / self._config['rate']:.2f}s"
-                )
+            # Now we can safely stop and close the stream
+            print(">>> Stopping stream...")
+            self._stream.stop_stream()
+            self._stream.close()
 
-            except Exception as e:
-                print(f"!!! Error stopping stream: {e}")
-            finally:
-                self._stream = None
-        print(">>> Stream stopped")
+            # Calculate final recording length
+            total_samples = len(self._recorded_frames) * self._config["chunk"]
+            recording_length = total_samples / self._config["rate"]
+            print(f">>> Final recording length: {recording_length:.2f}s")
+            print(f">>> Total frames recorded: {len(self._recorded_frames)}")
+
+        except Exception as e:
+            print(f"!!! Error during stream shutdown: {e}")
+            print(traceback.format_exc())
+        finally:
+            self._stream = None
+            self._stop_requested = False
+            self._is_processing = False
+            print(">>> Recording stopped and processed")
 
     def set_output_device(self, device_id: int) -> None:
         """Set the output device ID for playback"""
@@ -174,6 +221,8 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
                 print(f"    Sample width: {wf.getsampwidth()}")
                 print(f"    Frame rate: {wf.getframerate()}")
                 print(f"    Frames: {wf.getnframes()}")
+                duration = wf.getnframes() / wf.getframerate()
+                print(f"    Duration: {duration:.2f}s")
 
                 # Create playback stream
                 self._playback_stream = self._audio.open(
@@ -190,13 +239,17 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
                 data = wf.readframes(chunk)
                 total_bytes = 0
 
+                print(">>> Starting playback...")
                 while len(data) > 0:
-                    self._playback_stream.write(data)
+                    self._playback_stream.write(data, chunk)  # Specify chunk size
                     total_bytes += len(data)
                     data = wf.readframes(chunk)
 
+                # Wait for stream to finish playing
+                self._playback_stream.stop_stream()
                 print(f">>> Played {total_bytes} bytes")
 
+            # Properly close the stream
             self.stop_playback()
             print(">>> Playback completed")
 
@@ -210,7 +263,8 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
         """Stop current audio playback"""
         if self._playback_stream:
             try:
-                self._playback_stream.stop_stream()
+                if not self._playback_stream.is_stopped():
+                    self._playback_stream.stop_stream()
                 self._playback_stream.close()
             except Exception as e:
                 print(f"!!! Error stopping playback: {e}")
@@ -224,12 +278,36 @@ class PyAudioProvider(AudioInputProvider, AudioOutputProvider):
             return
 
         try:
+            print(f"\n=== Saving recording to {filename} ===")
+            print(f">>> Number of frames: {len(self._recorded_frames)}")
+
+            # Combine all frames
+            all_audio_data = b"".join(self._recorded_frames)
+            print(f">>> Total bytes: {len(all_audio_data)}")
+
             with wave.open(filename, "wb") as wf:
                 wf.setnchannels(self._config["channels"])
                 wf.setsampwidth(self._audio.get_sample_size(self._config["format"]))
                 wf.setframerate(self._config["rate"])
-                wf.writeframes(b"".join(self._recorded_frames))
-            print(f">>> Recording saved to {filename}")
+                wf.writeframes(all_audio_data)
+
+                # Debug info about the saved file
+                print(f">>> WAV file details:")
+                print(f"    Channels: {wf.getnchannels()}")
+                print(f"    Sample width: {wf.getsampwidth()}")
+                print(f"    Frame rate: {wf.getframerate()}")
+                print(f"    Frames written: {wf.getnframes()}")
+                duration = wf.getnframes() / wf.getframerate()
+                print(f"    Duration: {duration:.2f}s")
+
+            print(f">>> Recording saved successfully")
+
+            # Verify the saved file
+            with wave.open(filename, "rb") as wf:
+                verify_frames = wf.getnframes()
+                verify_duration = verify_frames / wf.getframerate()
+                print(f">>> Verified file duration: {verify_duration:.2f}s")
+
         except Exception as e:
             print(f"!!! Error saving recording: {e}")
             raise
